@@ -54,6 +54,7 @@ findBall ((x, y, val) : xs) = if val == Ball then (x, y) else findBall xs
 findTarget :: [(Int, Int, Tile)] -> (Int, Int)
 findTarget ((x, y, val) : xs) = if val == Target then (x, y) else findTarget xs
 
+-- return only reachable bonuses
 findBonuses :: [(Int, Int, Tile)] -> [(Int, Int)]
 findBonuses [] = []
 findBonuses ((x, y, val) : xs) = if val == Star then (x, y) : findBonuses xs else findBonuses xs
@@ -99,7 +100,7 @@ check board = dfs board stack visited
 -- Solver
 
 blockNodes :: [Tile]
-blockNodes = [Grass]
+blockNodes = [Condition]
 
 removeStar :: [[Tile]] -> (Int, Int) -> [[Tile]]
 removeStar board (x, y) = [[if x1 == x && y == y1 && tile == Star then Path else tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
@@ -143,19 +144,19 @@ notMove board (x, y) (xNew, yNew) = ((board !! x !! y) `elem` blockNodes) || ((b
 -- Need to remove the stars which were accumulated and also take into account borders
 applyContinous :: [[Tile]] -> (Int, Int) -> Action -> ((Int, Int), Action, [[Tile]])
 applyContinous board (x, y) UP =
-  if (x - 1 < 0) || ((board !! (x - 1) !! y) `elem` blockNodes) || ((board !! x) !! y == Target && null (findBonuses (enumerator board)))
+  if (x - 1 < 0) || notMove board (x, y) (x -1, y)
     then ((x, y), UP, board)
     else applyContinous (removeStar board (x, y)) (x - 1, y) UP
 applyContinous board (x, y) DOWN =
-  if x + 1 >= length (head board) || (board !! (x + 1)) !! y `elem` blockNodes || ((board !! x) !! y == Target && null (findBonuses (enumerator board)))
+  if x + 1 >= length board || notMove board (x, y) (x + 1, y)
     then ((x, y), DOWN, board)
     else applyContinous (removeStar board (x, y)) (x + 1, y) DOWN
 applyContinous board (x, y) LEFT =
-  if y - 1 < 0 || ((board !! x) !! (y -1)) `elem` blockNodes || ((board !! x) !! y == Target && null (findBonuses (enumerator board)))
+  if y - 1 < 0 || notMove board (x, y) (x, y -1)
     then ((x, y), LEFT, board)
     else applyContinous (removeStar board (x, y)) (x, y - 1) LEFT
 applyContinous board (x, y) RIGHT =
-  if y + 1 >= length (head board) || ((board !! x) !! (y + 1)) `elem` blockNodes || ((board !! x) !! y == Target && null (findBonuses (enumerator board)))
+  if y + 1 >= length (head board) || notMove board (x, y) (x, y + 1)
     then ((x, y), RIGHT, board)
     else applyContinous (removeStar board (x, y)) (x, y + 1) RIGHT
 
