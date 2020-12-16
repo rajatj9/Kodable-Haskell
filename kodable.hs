@@ -5,7 +5,7 @@ import System.IO ()
 
 data Tile = Grass | Ball | Condition | Func | Loop | Star | Path | Target deriving (Show, Eq)
 
-data Action = UP | DOWN | RIGHT | LEFT deriving (Show, Eq)
+data Action = UP | DOWN | RIGHT | LEFT | START deriving (Show, Eq)
 
 actions :: [Action]
 actions = [LEFT, UP, DOWN, RIGHT]
@@ -102,6 +102,9 @@ check board = dfs board stack visited
 blockNodes :: [Tile]
 blockNodes = [Condition]
 
+isBlockNode :: [[Tile]] -> (Int, Int) -> Bool
+isBlockNode board (x, y) = ((board !! x) !! y) `elem` blockNodes
+
 removeStar :: [[Tile]] -> (Int, Int) -> [[Tile]]
 removeStar board (x, y) = [[if x1 == x && y == y1 && tile == Star then Path else tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
 
@@ -139,35 +142,6 @@ heuristic2 board (x, y) = manhattanDistance (x, y) (findTarget enumeratedBoard) 
     bonuses = findBonuses enumeratedBoard
     enumeratedBoard = enumerator board
 
-notMove board (x, y) (xNew, yNew) = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target && null (findBonuses (enumerator board)))
-
--- Need to remove the stars which were accumulated and also take into account borders
-applyContinous :: [[Tile]] -> (Int, Int) -> Action -> ((Int, Int), Action, [[Tile]])
-applyContinous board (x, y) UP =
-  if (x - 1 < 0) || notMove board (x, y) (x -1, y)
-    then ((x, y), UP, board)
-    else applyContinous (removeStar board (x, y)) (x - 1, y) UP
-applyContinous board (x, y) DOWN =
-  if x + 1 >= length board || notMove board (x, y) (x + 1, y)
-    then ((x, y), DOWN, board)
-    else applyContinous (removeStar board (x, y)) (x + 1, y) DOWN
-applyContinous board (x, y) LEFT =
-  if y - 1 < 0 || notMove board (x, y) (x, y -1)
-    then ((x, y), LEFT, board)
-    else applyContinous (removeStar board (x, y)) (x, y - 1) LEFT
-applyContinous board (x, y) RIGHT =
-  if y + 1 >= length (head board) || notMove board (x, y) (x, y + 1)
-    then ((x, y), RIGHT, board)
-    else applyContinous (removeStar board (x, y)) (x, y + 1) RIGHT
-
--- new getSuccessors such that it keeps applying the function till it reaches
-
-getThreeTupleHead :: (a, b, c) -> a
-getThreeTupleHead (pos, _, _) = pos
-
-getSolverSuccessors :: [[Tile]] -> (Int, Int) -> [((Int, Int), Action, [[Tile]])]
-getSolverSuccessors board state = [applyContinous board state action | action <- actions, validAction board state action, getThreeTupleHead (applyContinous board state action) /= state]
-
 findSolution :: [[Tile]] -> (Int, Int) -> [Action] -> IO ()
 findSolution board state solution
   | heuristic board state == 0 = print stateWithScores
@@ -184,7 +158,87 @@ findSolution board state solution
     statesWithoutBoard = map (\(a, b, c, d) -> (a, b, c)) stateWithScores
     (f, newState, action, newBoard) = minimumBy (comparing (\(h, _, _, _) -> h)) stateWithScores
 
--- (f, newState, action, newBoard) = foldl (\(h1, pos1, a1, b1) (h2, pos2, a2, b2) -> if h1 < h2 then (h1, pos1, a1, b1) else (h2, pos2, a2, b2)) (1000000000, state, UP, board) stateWithScores
+notMove :: [[Tile]] -> (Int, Int) -> (Int, Int) -> Bool
+notMove board (x, y) (xNew, yNew) = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target && null (findBonuses (enumerator board)))
+
+applyContinous :: [[Tile]] -> (Int, Int) -> Action -> Bool -> ((Int, Int), Action, [[Tile]])
+applyContinous board (x, y) UP forced =
+  if (x - 1 < 0) || (notMove board (x, y) (x -1, y) && not forced)
+    then ((x, y), UP, board)
+    else applyContinous (removeStar board (x, y)) (x - 1, y) UP False
+applyContinous board (x, y) DOWN forced =
+  if x + 1 >= length board || (notMove board (x, y) (x + 1, y) && not forced)
+    then ((x, y), DOWN, board)
+    else applyContinous (removeStar board (x, y)) (x + 1, y) DOWN False
+applyContinous board (x, y) LEFT forced =
+  if y - 1 < 0 || (notMove board (x, y) (x, y -1) && not forced)
+    then ((x, y), LEFT, board)
+    else applyContinous (removeStar board (x, y)) (x, y - 1) LEFT False
+applyContinous board (x, y) RIGHT forced =
+  if y + 1 >= length (head board) || (notMove board (x, y) (x, y + 1) && not forced)
+    then ((x, y), RIGHT, board)
+    else applyContinous (removeStar board (x, y)) (x, y + 1) RIGHT False
+
+getThreeTupleHead :: (a, b, c) -> a
+getThreeTupleHead (pos, _, _) = pos
+
+getSolverSuccessors :: [[Tile]] -> (Int, Int) -> [((Int, Int), Action, [[Tile]])]
+getSolverSuccessors board state = [applyContinous board state action (isBlockNode board state) | action <- actions, validAction board state action, getThreeTupleHead (applyContinous board state action (isBlockNode board state)) /= state]
+
+getStateAndBonuses :: ((Int, Int), Action, [[Tile]]) -> ((Int, Int), Int)
+getStateAndBonuses (pos, action, board) = (pos, length (findBonuses (enumerator board)))
+
+getSolverSuccessorsBFS :: [[Tile]] -> (Int, Int) -> [((Int, Int), Int)] -> [((Int, Int), Action, [[Tile]])]
+getSolverSuccessorsBFS board state visited = [applyContinous board state action (isBlockNode board state) | action <- actions, validAction board state action, getStateAndBonuses (applyContinous board state action (isBlockNode board state)) `notElem` visited]
+
+exploreNeighbours :: ([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]]) -> [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
+exploreNeighbours frontier
+  | ((board !! x) !! y) == Target = [frontier]
+  | null successors = []
+  | otherwise =
+    [ ( path ++ [(newState, newAction)],
+        visited ++ [(newState, length (findBonuses (enumerator newBoard)))],
+        newBoard
+      )
+      | (newState, newAction, newBoard) <- successors,
+        (newState, length (findBonuses (enumerator newBoard))) `notElem` visited
+    ]
+  where
+    (path, visited, board) = frontier
+    (state, lastAction) = last path
+    (x, y) = state
+    successors = getSolverSuccessors board state
+
+-- _______________ [([(Position, Action  )], [(Position), RemBo],    Board)] -> [([(Position, Action  )], [(Position), RemBo],    Board)]
+findSolutionBFS :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> IO [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
+findSolutionBFS stack
+  | stack == newStack = do
+    putStrLn "SOLVING COMPLETE"
+    return stack -- (Check if Last Node of all frontiers is Target)
+  | otherwise = do
+    -- print stackWithoutBoard
+    putStrLn "------------- \n"
+    findSolutionBFS newStack
+  where
+    stackWithoutBoard = [(a, b) | (a, b, c) <- stack]
+    newStack = concat [exploreNeighbours frontier | frontier <- stack]
+
+solveBFS :: [[Tile]] -> IO [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
+solveBFS board = findSolutionBFS [([(ballPos, START)], [(ballPos, initBonus)], board)]
+  where
+    ballPos = findBall (enumerator board)
+    initBonus = length (findBonuses $ enumerator board)
+
+mainBFS :: IO ()
+mainBFS = do
+  putStrLn "Enter File Name: "
+  fileName <- getLine
+  board <- load fileName
+  putStrLn "Board loaded successfully!"
+  solvable <- check board
+  putStrLn ("Solvable: " ++ show solvable)
+  sol <- solveBFS board
+  putStrLn "Done"
 
 main :: IO ()
 main = do
@@ -212,7 +266,3 @@ s2 =
     [Star, Grass, Path],
     [Ball, Path, Path]
   ]
-
-stack = [[findBall (enumerator (makeBoard sample))]]
-
-func = minimumBy (comparing fst) [(1, 24), (3, 5), (5, 7)]
