@@ -99,7 +99,7 @@ check board = dfs board stack visited
 -- Solver
 
 blockNodes :: [Tile]
-blockNodes = [Condition]
+blockNodes = [Grass]
 
 removeStar :: [[Tile]] -> (Int, Int) -> [[Tile]]
 removeStar board (x, y) = [[if x1 == x && y == y1 && tile == Star then Path else tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
