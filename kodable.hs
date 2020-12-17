@@ -5,7 +5,7 @@ import System.IO ()
 
 data Tile = Grass | Ball | Condition | Func | Loop | Star | Path | Target deriving (Show, Eq)
 
-data Action = UP | DOWN | RIGHT | LEFT | START deriving (Show, Eq)
+data Action = UP | DOWN | RIGHT | LEFT | START | Cond Action | LOOP (Action, Action) Int deriving (Show, Eq)
 
 actions :: [Action]
 actions = [LEFT, UP, DOWN, RIGHT]
@@ -46,6 +46,7 @@ makeBoard = foldr ((:) . parseLine) []
 enumerate :: [b] -> [(Int, b)]
 enumerate = zip [0 ..]
 
+enumerator :: [[Tile]] -> [(Int, Int, Tile)]
 enumerator board = concat [[(x, y, val) | (y, val) <- enumerate row] | (x, row) <- enumerate board]
 
 findBall :: [(Int, Int, Tile)] -> (Int, Int)
@@ -108,23 +109,14 @@ isBlockNode board (x, y) = ((board !! x) !! y) `elem` blockNodes
 removeStar :: [[Tile]] -> (Int, Int) -> [[Tile]]
 removeStar board (x, y) = [[if x1 == x && y == y1 && tile == Star then Path else tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
 
--- Visited will store (X_pos, Y_pos, Action, Num_Stars_in_the_Game_then)
--- So the algorithm doesn't take the same action when the Num_Stars_in_the_Game doesn't change
--- Make ball move based on distance to the closest star
--- Make the ball move towards the target if all the stars have been collected
-
 manhattanDistance :: Num a => (a, a) -> (a, a) -> a
 manhattanDistance (x1, y1) (x2, y2) = abs (x1 - x2) + abs (y1 - y2)
 
 closestBonus :: (Ord a, Num a, Num a) => (a, a) -> [(a, a)] -> ((a, a), a)
--- closestBonus (x1, y1) bonuses = foldl (\(pos1, d1) (pos2, d2) -> if d1 < d2 then (pos1, d1) else (pos2, d2)) ((x1, y1), 100000000) bonusAndDistance
---   where
---     newBonuses = [(x, y) | (x, y) <- bonuses, (x1, y1) /= (x, y)]
---     bonusAndDistance = zip bonuses (map (manhattanDistance (x1, y1)) bonuses)
 closestBonus (x1, y1) bonuses = minimumBy (comparing snd) bonusAndDistance
   where
     newBonuses = [(x, y) | (x, y) <- bonuses, (x1, y1) /= (x, y)]
-    bonusAndDistance = zip bonuses (map (manhattanDistance (x1, y1)) bonuses)
+    bonusAndDistance = zip bonuses (map (manhattanDistance (x1, y1)) newBonuses)
 
 heuristic :: [[Tile]] -> (Int, Int) -> Int
 heuristic board (x, y) =
@@ -135,12 +127,6 @@ heuristic board (x, y) =
     enumeratedBoard = enumerator board
     bonuses = findBonuses enumeratedBoard
     (bonusPos, bonusDist) = closestBonus (x, y) bonuses
-
-heuristic2 :: [[Tile]] -> (Int, Int) -> Int
-heuristic2 board (x, y) = manhattanDistance (x, y) (findTarget enumeratedBoard) + sum (map (manhattanDistance (x, y)) bonuses)
-  where
-    bonuses = findBonuses enumeratedBoard
-    enumeratedBoard = enumerator board
 
 findSolution :: [[Tile]] -> (Int, Int) -> [Action] -> IO ()
 findSolution board state solution
@@ -210,24 +196,48 @@ exploreNeighbours frontier
     successors = getSolverSuccessors board state
 
 -- _______________ [([(Position, Action  )], [(Position), RemBo],    Board)] -> [([(Position, Action  )], [(Position), RemBo],    Board)]
-findSolutionBFS :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> IO [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
+findSolutionBFS :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
 findSolutionBFS stack
-  | stack == newStack = do
-    putStrLn "SOLVING COMPLETE"
-    return stack -- (Check if Last Node of all frontiers is Target)
-  | otherwise = do
-    -- print stackWithoutBoard
-    putStrLn "------------- \n"
-    findSolutionBFS newStack
+  | stack == newStack = stack -- All frontiers have reached Target (no new neighbours)
+  | otherwise = findSolutionBFS newStack
   where
-    stackWithoutBoard = [(a, b) | (a, b, c) <- stack]
     newStack = concat [exploreNeighbours frontier | frontier <- stack]
 
-solveBFS :: [[Tile]] -> IO [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
+solveBFS :: [[Tile]] -> [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
 solveBFS board = findSolutionBFS [([(ballPos, START)], [(ballPos, initBonus)], board)]
   where
     ballPos = findBall (enumerator board)
     initBonus = length (findBonuses $ enumerator board)
+
+findUnCollectableBonuses :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> Int
+findUnCollectableBonuses stack = minimum [snd (last visited) | (path, visited, board) <- stack]
+
+findCompletePaths :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> [[((Int, Int), Action)]]
+findCompletePaths stack = [path | (path, visited, _) <- stack, snd (last visited) == unCollectableBonuses]
+  where
+    unCollectableBonuses = findUnCollectableBonuses stack
+
+parsePathConditions :: [((Int, Int), Action)] -> Bool -> [[Tile]] -> [((Int, Int), Action)]
+parsePathConditions [] _ _ = []
+parsePathConditions (((x, y), action) : remPath) prevCondition board = if prevCondition then ((x, y), Cond action) : parsedPath else ((x, y), action) : parsedPath
+  where
+    nextCond = (board !! x) !! y `elem` blockNodes
+    parsedPath = parsePathConditions remPath nextCond board
+
+loopAccumulator :: (Action, Action) -> [Action] -> Int -> (Int, [Action])
+loopAccumulator (action1, action2) stack count
+  | length stack < 2 = (count, stack)
+  | otherwise = if stack !! 0 == action1 && stack !! 1 == action2 then loopAccumulator (action1, action2) (drop 2 stack) (count + 1) else (count, stack)
+
+createLoops :: [Action] -> [Action]
+createLoops stack
+  | length stack < 4 = stack
+  | otherwise = if action1 == (stack !! 2) && action2 == (stack !! 3) then result else head stack : createLoops (tail stack)
+  where
+    action1 = head stack
+    action2 = stack !! 1
+    (loopCount, remList) = loopAccumulator (action1, action2) (drop 4 stack) 2
+    result = LOOP (action1, action2) loopCount : createLoops remList
 
 mainBFS :: IO ()
 mainBFS = do
@@ -237,8 +247,14 @@ mainBFS = do
   putStrLn "Board loaded successfully!"
   solvable <- check board
   putStrLn ("Solvable: " ++ show solvable)
-  sol <- solveBFS board
-  putStrLn "Done"
+  let completePaths = findCompletePaths (solveBFS board)
+  putStrLn $ concat ["Path: " ++ show path ++ "\n" | path <- completePaths]
+  putStrLn ("Number of Paths: " ++ show (length completePaths))
+  let optimalPath = minimumBy (comparing length) completePaths
+  let parsedOptimalPath = parsePathConditions optimalPath False board
+  let optimalPathActions = [action | (_, action) <- parsedOptimalPath]
+  let optimalPathWithLoops = createLoops optimalPathActions
+  putStrLn ("Optimal Path: " ++ show optimalPathWithLoops)
 
 main :: IO ()
 main = do
