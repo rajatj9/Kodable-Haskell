@@ -3,9 +3,9 @@ import Data.Ord (comparing)
 import System.Directory (doesFileExist)
 import System.IO ()
 
-data Tile = Grass | Ball | Condition | Func | Loop | Star | Path | Target deriving (Show, Eq)
+data Tile = Grass | Ball | Condition | Star | Path | Target deriving (Show, Eq)
 
-data Action = UP | DOWN | RIGHT | LEFT | START | Cond Action | LOOP (Action, Action) Int deriving (Show, Eq)
+data Action = UP | DOWN | RIGHT | LEFT | START | Cond Action | LOOP (Action, Action) Int | FUNCTION (Action, Action, Action) deriving (Show, Eq)
 
 actions :: [Action]
 actions = [LEFT, UP, DOWN, RIGHT]
@@ -34,8 +34,8 @@ mapCharToData '-' = Path
 mapCharToData 't' = Target
 mapCharToData 'b' = Star
 mapCharToData 'p' = Condition
-mapCharToData 'o' = Func
-mapCharToData 'y' = Loop
+mapCharToData 'o' = Condition
+mapCharToData 'y' = Condition
 
 parseLine :: [Char] -> [Tile]
 parseLine inputs = [mapCharToData x | x <- inputs, x /= ' ']
@@ -239,6 +239,23 @@ createLoops stack
     (loopCount, remList) = loopAccumulator (action1, action2) (drop 4 stack) 2
     result = LOOP (action1, action2) loopCount : createLoops remList
 
+createFunctions :: [Action] -> [Action]
+createFunctions [a, b] = [a, b]
+createFunctions [a] = [a]
+createFunctions [] = []
+createFunctions (LOOP (a1, a2) x1 : b : c : remList) = LOOP (a1, a2) x1 : createFunctions (b : c : remList)
+createFunctions (b : LOOP (a1, a2) x1 : c : remList) = [b, LOOP (a1, a2) x1] ++ createFunctions (c : remList)
+createFunctions (b : c : LOOP (a1, a2) x1 : remList) = [b, c, LOOP (a1, a2) x1] ++ createFunctions remList
+createFunctions (a : b : c : remList) = FUNCTION (a, b, c) : createFunctions remList
+
+parsePath :: [((Int, Int), Action)] -> [[Tile]] -> [Action]
+parsePath optimalPath board = finalPathWithFunctions
+  where
+    parsedWithCond = parsePathConditions optimalPath False board
+    pathWithOnlyActions = [action | (_, action) <- parsedWithCond]
+    parsedWithLoops = createLoops (tail pathWithOnlyActions) -- remove START
+    finalPathWithFunctions = createFunctions parsedWithLoops
+
 mainBFS :: IO ()
 mainBFS = do
   putStrLn "Enter File Name: "
@@ -251,10 +268,8 @@ mainBFS = do
   putStrLn $ concat ["Path: " ++ show path ++ "\n" | path <- completePaths]
   putStrLn ("Number of Paths: " ++ show (length completePaths))
   let optimalPath = minimumBy (comparing length) completePaths
-  let parsedOptimalPath = parsePathConditions optimalPath False board
-  let optimalPathActions = [action | (_, action) <- parsedOptimalPath]
-  let optimalPathWithLoops = createLoops optimalPathActions
-  putStrLn ("Optimal Path: " ++ show optimalPathWithLoops)
+  let optSolution = parsePath optimalPath board
+  putStrLn ("Optimal Path: " ++ show optSolution)
 
 main :: IO ()
 main = do
@@ -265,20 +280,3 @@ main = do
   solvable <- check board
   putStrLn ("Solvable: " ++ show solvable)
   findSolution board (findBall (enumerator board)) []
-
-sample = ["* * * * * - - - - - - - - - - - - - - - - - - - * * * * * ", "* * * * * b - - - - - - - - - - - - - - - - - b * * * * * ", "* * * * * - * * * * * * * * * * * * * * * * * - * * * * * ", "* * * * * - * * - - - - * * * * * - - - - * * - * * * * * ", "* * * * * - * * - y y - * * * * * - y y - * * - * * * * * ", "* * * * * - * * - - - - * * * * * - - - - * * - * * * * * ", "* * * * * - * * * * * * - - b - - * * * * * * - * * * * *  ", "* * * * * - * * * * * * - * * * - * * * * * * - * * * * * ", "@ - - - - - * * * * * * - * * * - * * * * * * p - - - - t ", "* * * * * - * * * * * * - * * * - * * * * * * - * * * * * ", "* * * * * - - - - - - - - * * * - - - - - - - - * * * * * ", "* * * * * * * * * * * * * * * * * * * * * * * * * * * * * ", "* * * * * * * * * * * * * * * * * * * * * * * * * * * * * "]
-
--- s1 = ["* t - ", "* * - ", "@ - - "]
-s1 =
-  [ [Grass, Target, Path],
-    [Path, Path, Path],
-    [Star, Grass, Path],
-    [Ball, Path, Path]
-  ]
-
-s2 =
-  [ [Grass, Target, Path],
-    [Grass, Path, Path],
-    [Star, Grass, Path],
-    [Ball, Path, Path]
-  ]
