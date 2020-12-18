@@ -373,7 +373,11 @@ game fileName = do
   fileContent <- getFile fileName
   let board = makeBoard fileContent
   putStrLn (boardString board)
-  putStrLn "Board Loaded Successfully!"
+  putStrLn "Board Loaded Successfully!\n"
+  putStrLn "Options Available:"
+  putStrLn "check"
+  putStrLn "play"
+  putStrLn "solve"
   input <- getLine
   if take 4 input == "play"
     then
