@@ -3,9 +3,9 @@ import Data.Ord (comparing)
 import System.Directory (doesFileExist)
 import System.IO ()
 
-data Tile = Grass | Ball | Condition | Star | Path | Target deriving (Show, Eq)
+data Tile = Grass | Ball | Condition Char | Star | Path | Target deriving (Show, Eq)
 
-data Action = UP | DOWN | RIGHT | LEFT | START | Cond Action | LOOP (Action, Action) Int | FUNCTION (Action, Action, Action) deriving (Show, Eq)
+data Action = UP | DOWN | RIGHT | LEFT | START | Cond Char Action | LOOP (Action, Action) Int | FUNCTION (Action, Action, Action) deriving (Show, Eq)
 
 actions :: [Action]
 actions = [LEFT, UP, DOWN, RIGHT]
@@ -33,9 +33,9 @@ mapCharToData '@' = Ball
 mapCharToData '-' = Path
 mapCharToData 't' = Target
 mapCharToData 'b' = Star
-mapCharToData 'p' = Condition
-mapCharToData 'o' = Condition
-mapCharToData 'y' = Condition
+mapCharToData 'p' = Condition 'p'
+mapCharToData 'o' = Condition 'o'
+mapCharToData 'y' = Condition 'y'
 
 parseLine :: [Char] -> [Tile]
 parseLine inputs = [mapCharToData x | x <- inputs, x /= ' ']
@@ -101,7 +101,7 @@ check board = dfs board stack visited
 -- Solver
 
 blockNodes :: [Tile]
-blockNodes = [Condition]
+blockNodes = [Condition 'p', Condition 'y', Condition 'o']
 
 isBlockNode :: [[Tile]] -> (Int, Int) -> Bool
 isBlockNode board (x, y) = ((board !! x) !! y) `elem` blockNodes
@@ -195,16 +195,15 @@ exploreNeighbours frontier
     (x, y) = state
     successors = getSolverSuccessors board state
 
--- _______________ [([(Position, Action  )], [(Position), RemBo],    Board)] -> [([(Position, Action  )], [(Position), RemBo],    Board)]
-findSolutionBFS :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
-findSolutionBFS stack
+findPathsBFS :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
+findPathsBFS stack
   | stack == newStack = stack -- All frontiers have reached Target (no new neighbours)
-  | otherwise = findSolutionBFS newStack
+  | otherwise = findPathsBFS newStack
   where
     newStack = concat [exploreNeighbours frontier | frontier <- stack]
 
-solveBFS :: [[Tile]] -> [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
-solveBFS board = findSolutionBFS [([(ballPos, START)], [(ballPos, initBonus)], board)]
+findCompletePaths :: [[Tile]] -> [[((Int, Int), Action)]]
+findCompletePaths board = extractCompletePaths $ findPathsBFS [([(ballPos, START)], [(ballPos, initBonus)], board)]
   where
     ballPos = findBall (enumerator board)
     initBonus = length (findBonuses $ enumerator board)
@@ -212,21 +211,25 @@ solveBFS board = findSolutionBFS [([(ballPos, START)], [(ballPos, initBonus)], b
 findUnCollectableBonuses :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> Int
 findUnCollectableBonuses stack = minimum [snd (last visited) | (path, visited, board) <- stack]
 
-findCompletePaths :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> [[((Int, Int), Action)]]
-findCompletePaths stack = [path | (path, visited, _) <- stack, snd (last visited) == unCollectableBonuses]
+extractCompletePaths :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> [[((Int, Int), Action)]]
+extractCompletePaths stack = [path | (path, visited, _) <- stack, snd (last visited) == unCollectableBonuses]
   where
     unCollectableBonuses = findUnCollectableBonuses stack
 
-parsePathConditions :: [((Int, Int), Action)] -> Bool -> [[Tile]] -> [((Int, Int), Action)]
-parsePathConditions [] _ _ = []
-parsePathConditions (((x, y), action) : remPath) prevCondition board = if prevCondition then ((x, y), Cond action) : parsedPath else ((x, y), action) : parsedPath
+findOptimalPath :: [[((Int, Int), Action)]] -> [[Tile]] -> [Action]
+findOptimalPath path board = parsePath (minimumBy (comparing length) path) board
+
+parsePathConditions :: [((Int, Int), Action)] -> Bool -> Char -> [[Tile]] -> [((Int, Int), Action)]
+parsePathConditions [] _ _ _ = []
+parsePathConditions (((x, y), action) : remPath) prevCondition color board = if prevCondition then ((x, y), (Cond color action)) : parsedPath else ((x, y), action) : parsedPath
   where
     nextCond = (board !! x) !! y `elem` blockNodes
-    parsedPath = parsePathConditions remPath nextCond board
+    (Condition nextColor) = if nextCond then (board !! x) !! y else Condition 'n'
+    parsedPath = parsePathConditions remPath nextCond nextColor board
 
 loopAccumulator :: (Action, Action) -> [Action] -> Int -> (Int, [Action])
 loopAccumulator (action1, action2) stack count
-  | length stack < 2 = (count, stack)
+  | length stack < 2 || count > 4 = (count, stack)
   | otherwise = if stack !! 0 == action1 && stack !! 1 == action2 then loopAccumulator (action1, action2) (drop 2 stack) (count + 1) else (count, stack)
 
 createLoops :: [Action] -> [Action]
@@ -251,28 +254,35 @@ createFunctions (a : b : c : remList) = FUNCTION (a, b, c) : createFunctions rem
 parsePath :: [((Int, Int), Action)] -> [[Tile]] -> [Action]
 parsePath optimalPath board = finalPathWithFunctions
   where
-    parsedWithCond = parsePathConditions optimalPath False board
+    parsedWithCond = parsePathConditions optimalPath False 'n' board
     pathWithOnlyActions = [action | (_, action) <- parsedWithCond]
     parsedWithLoops = createLoops (tail pathWithOnlyActions) -- remove START
     finalPathWithFunctions = createFunctions parsedWithLoops
 
-mainBFS :: IO ()
-mainBFS = do
+solve :: [[Tile]] -> [Action]
+solve board = findOptimalPath completePaths board
+  where
+    completePaths = findCompletePaths board
+
+main :: IO ()
+main = do
   putStrLn "Enter File Name: "
   fileName <- getLine
   board <- load fileName
   putStrLn "Board loaded successfully!"
   solvable <- check board
   putStrLn ("Solvable: " ++ show solvable)
-  let completePaths = findCompletePaths (solveBFS board)
-  putStrLn $ concat ["Path: " ++ show path ++ "\n" | path <- completePaths]
-  putStrLn ("Number of Paths: " ++ show (length completePaths))
-  let optimalPath = minimumBy (comparing length) completePaths
-  let optSolution = parsePath optimalPath board
-  putStrLn ("Optimal Path: " ++ show optSolution)
+  let solution = solve board
+  putStrLn ("Solution: " ++ show solution)
 
-main :: IO ()
-main = do
+-- let completePaths = findCompletePaths board
+-- putStrLn $ concat ["Path: " ++ show path ++ "\n" | path <- completePaths]
+-- putStrLn ("Number of Paths: " ++ show (length completePaths))
+-- let optimalPath = findOptimalPath completePaths board
+-- putStrLn ("Solution: " ++ show optimalPath)
+
+mainGreedy :: IO ()
+mainGreedy = do
   putStrLn "Enter File Name: "
   fileName <- getLine
   board <- load fileName
