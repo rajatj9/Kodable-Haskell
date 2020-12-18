@@ -6,9 +6,19 @@ import System.Directory (doesFileExist)
 import System.IO ()
 import Prelude hiding (Left, Right)
 
-data Tile = Grass | Ball | Condition Char | Star | Path | Target deriving (Show, Eq)
+data Tile = Grass | Ball | Condition Char | Star | Path | Target deriving (Eq)
 
 data Action = Up | Down | Right | Left | START | Cond Char Action | LOOP (Action, Action) Int | Function (Action, Action, Action) deriving (Show, Eq)
+
+instance Show Tile where
+  show Grass = "*"
+  show Path = "-"
+  show Star = "b"
+  show Ball = "@"
+  show (Condition 'p') = "p"
+  show (Condition 'o') = "o"
+  show (Condition 'y') = "y"
+  show Target = "t"
 
 actions :: [Action]
 actions = [Left, Up, Down, Right]
@@ -39,6 +49,15 @@ mapCharToData 'b' = Star
 mapCharToData 'p' = Condition 'p'
 mapCharToData 'o' = Condition 'o'
 mapCharToData 'y' = Condition 'y'
+
+boardString :: [[Tile]] -> String
+boardString [x] = unwords (map show x)
+boardString (x : xs) = unwords (map show x) ++ "\n" ++ boardString xs
+
+boardWithBall :: [[Tile]] -> (Int, Int) -> [[Tile]]
+boardWithBall board (x, y) = [[if x1 == x && y1 == y then Ball else newTile tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
+  where
+    newTile tile = if tile == Ball then Path else tile
 
 parseLine :: [Char] -> [Tile]
 parseLine inputs = [mapCharToData x | x <- inputs, x /= ' ']
@@ -335,15 +354,25 @@ applyPlayAction action state board = extractPosAndBoard $ applyContinous board s
 -- print board properly
 applyPlayActions :: [Action] -> (Int, Int) -> [[Tile]] -> IO ()
 applyPlayActions (action : actions) state board = do
-  let (newState, newBoard) = applyPlayAction action state board
-  print board
-  applyPlayActions actions newState newBoard
+  let ((newX, newY), newBoard) = applyPlayAction action state board
+
+  if (newX, newY) == state
+    then do
+      putStrLn ("Sorry, error: cannot move to the " ++ show action)
+      putStrLn "Your Current Board: "
+      putStrLn (boardString $ boardWithBall board state)
+    else do
+      putStrLn (boardString $ boardWithBall newBoard (newX, newY))
+      if null (findBonuses (enumerator newBoard)) && (board !! newX) !! newY == Target
+        then putStrLn "Congratulations! You win the game!"
+        else (if length (findBonuses (enumerator newBoard)) < length (findBonuses (enumerator board)) then putStrLn "Collected a bonus!" else putStrLn "")
+      if not (null actions) then applyPlayActions actions (newX, newY) newBoard else putStrLn ""
 
 game :: [Char] -> IO ()
 game fileName = do
   fileContent <- getFile fileName
   let board = makeBoard fileContent
-  print board
+  putStrLn (boardString board)
   putStrLn "Board Loaded Successfully!"
   input <- getLine
   if take 4 input == "play"
@@ -355,10 +384,12 @@ game fileName = do
               ( do
                   actions <- createActionList []
                   let parsedActions = map parseAction actions
+                  -- check if Actions are valid
                   applyPlayActions parsedActions (findBall (enumerator board)) board
-                  putStrLn "Parse Actions Now"
               )
-            else putStrLn "Play with Function"
+            else
+              ( putStrLn "Play with Function"
+              )
       )
     else
       ( if take 4 input == "quit"
