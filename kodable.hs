@@ -8,7 +8,7 @@ import Prelude hiding (Left, Right)
 
 data Tile = Grass | Ball | Condition Char | Star | Path | Target deriving (Eq)
 
-data Action = Up | Down | Right | Left | START | Cond Char Action | LOOP (Action, Action) Int | Function (Action, Action, Action) deriving (Show, Eq)
+data Action = Up | Down | Right | Left | START | Cond Char Action | LOOP (Action, Action) Int | Function (Action, Action, Action) deriving (Eq)
 
 instance Show Tile where
   show Grass = "*"
@@ -20,8 +20,23 @@ instance Show Tile where
   show (Condition 'y') = "y"
   show Target = "t"
 
+instance Show Action where
+  show Up = "Up"
+  show Down = "Down"
+  show Right = "Right"
+  show Left = "Left"
+  show (Cond color act) = "Cond{" ++ [color] ++ "}{" ++ show act ++ "}"
+  show (LOOP (a1, a2) freq) = "Loop{" ++ show freq ++ "}{" ++ show a1 ++ "," ++ show a2 ++ "}"
+  show (Function (a1, a2, a3)) = "Function with " ++ show a1 ++ " " ++ show a2 ++ " " ++ show a3
+
 actions :: [Action]
 actions = [Left, Up, Down, Right]
+
+colors :: [Char]
+colors = ['o', 'p', 'y']
+
+conditions :: [Action]
+conditions = [Cond color action | color <- colors, action <- actions]
 
 getFile :: String -> IO [String]
 getFile fileName = do
@@ -311,14 +326,27 @@ solve board = findOptimalPath completePaths board
   where
     completePaths = findCompletePaths board
 
-createActionList :: [String] -> IO [String]
+createActionList :: [Action] -> IO [Action]
 createActionList actions = do
   if null actions then putStr "First Direction: " else putStr "Next Direction: "
   direction <- getLine
-  if direction == "" then return actions else do createActionList (actions ++ [direction])
+  if direction == "" then return actions else do createActionList (actions ++ [parseAction direction])
+
+createActionListWithFunction :: [Action] -> [String] -> IO [Action]
+createActionListWithFunction actions funcStr = do
+  if null actions then putStr "First Direction: " else putStr "Next Direction: "
+  direction <- getLine
+  if direction == "Function"
+    then do createActionListWithFunction (actions ++ [parseFunction funcStr]) funcStr
+    else
+      ( if direction == "" then return actions else do createActionListWithFunction (actions ++ [parseAction direction]) funcStr
+      )
 
 seperateByComma :: [Char] -> [[Char]]
 seperateByComma str = words [if c == ',' then ' ' else c | c <- str]
+
+parseFunction :: [String] -> Action
+parseFunction [a1, a2, a3] = Function (parseAction a1, parseAction a2, parseAction a3)
 
 parseAction :: [Char] -> Action
 parseAction "Left" = Left
@@ -343,30 +371,43 @@ applyLoop board state loopFreq (action1, action2)
     (newState, newBoard) = applyPlayAction action1 state board
     (finalState, finalBoard) = applyPlayAction action2 newState newBoard
 
+applyFunction board state (action1, action2, action3) = applyPlayAction action3 state2 board2
+  where
+    (state1, board1) = applyPlayAction action1 state board
+    (state2, board2) = applyPlayAction action2 state1 board1
+
 extractPosAndBoard :: (a, b1, b2) -> (a, b2)
 extractPosAndBoard = \(pos, _, board) -> (pos, board)
 
 applyPlayAction :: Action -> (Int, Int) -> [[Tile]] -> ((Int, Int), [[Tile]])
 applyPlayAction (LOOP (a1, a2) loopFreq) state board = applyLoop board state loopFreq (a1, a2)
 applyPlayAction (Cond color action) state board = extractPosAndBoard $ applyContinous board state action True
+applyPlayAction (Function (a1, a2, a3)) state board = applyFunction board state (a1, a2, a3)
 applyPlayAction action state board = extractPosAndBoard $ applyContinous board state action False
 
 -- print board properly
 applyPlayActions :: [Action] -> (Int, Int) -> [[Tile]] -> IO ()
 applyPlayActions (action : actions) state board = do
   let ((newX, newY), newBoard) = applyPlayAction action state board
-
-  if (newX, newY) == state
+  -- if we reach a condition tile and the next action is not a Conditional action then keep moving
+  if (board !! newX) !! newY `elem` blockNodes && not (null actions) && (head actions `notElem` conditions)
     then do
-      putStrLn ("Sorry, error: cannot move to the " ++ show action)
-      putStrLn "Your Current Board: "
-      putStrLn (boardString $ boardWithBall board state)
-    else do
-      putStrLn (boardString $ boardWithBall newBoard (newX, newY))
-      if null (findBonuses (enumerator newBoard)) && (board !! newX) !! newY == Target
-        then putStrLn "Congratulations! You win the game!"
-        else (if length (findBonuses (enumerator newBoard)) < length (findBonuses (enumerator board)) then putStrLn "Collected a bonus!" else putStrLn "")
-      if not (null actions) then applyPlayActions actions (newX, newY) newBoard else putStrLn ""
+      let (Condition color) = (board !! newX) !! newY
+      let newAction = Cond color action
+      applyPlayActions (newAction : actions) (newX, newY) newBoard
+    else
+      ( if (newX, newY) == state
+          then do
+            putStrLn ("Sorry, error: cannot move to the " ++ show action)
+            putStrLn "Your Current Board: "
+            putStrLn (boardString $ boardWithBall board state)
+          else do
+            putStrLn (boardString $ boardWithBall newBoard (newX, newY))
+            if null (findBonuses (enumerator newBoard)) && (board !! newX) !! newY == Target
+              then putStrLn "Congratulations! You win the game!"
+              else (if length (findBonuses (enumerator newBoard)) < length (findBonuses (enumerator board)) then putStrLn "Collected a bonus!" else putStrLn "")
+            if not (null actions) then applyPlayActions actions (newX, newY) newBoard else putStrLn ""
+      )
 
 game :: [Char] -> IO ()
 game fileName = do
@@ -387,12 +428,14 @@ game fileName = do
             then
               ( do
                   actions <- createActionList []
-                  let parsedActions = map parseAction actions
                   -- check if Actions are valid
-                  applyPlayActions parsedActions (findBall (enumerator board)) board
+                  applyPlayActions actions (findBall (enumerator board)) board
               )
             else
-              ( putStrLn "Play with Function"
+              ( do
+                  let fnActions = tail (words input)
+                  actions <- createActionListWithFunction [] fnActions
+                  applyPlayActions actions (findBall (enumerator board)) board
               )
       )
     else
@@ -414,7 +457,7 @@ main = do
   solvable <- check board
   putStrLn ("Solvable: " ++ show solvable)
   let solution = solve board
-  putStrLn ("Solution: " ++ show solution)
+  putStrLn ("Solution: " ++ (unwords $ map show solution))
 
 mainGreedy :: IO ()
 mainGreedy = do
