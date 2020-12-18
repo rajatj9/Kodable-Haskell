@@ -1,14 +1,17 @@
-import Data.List (minimumBy)
+import Data.Char
+import Data.Function (on)
+import Data.List (maximumBy, minimumBy, nub)
 import Data.Ord (comparing)
 import System.Directory (doesFileExist)
 import System.IO ()
+import Prelude hiding (Left, Right)
 
 data Tile = Grass | Ball | Condition Char | Star | Path | Target deriving (Show, Eq)
 
-data Action = UP | DOWN | RIGHT | LEFT | START | Cond Char Action | LOOP (Action, Action) Int | FUNCTION (Action, Action, Action) deriving (Show, Eq)
+data Action = Up | Down | Right | Left | START | Cond Char Action | LOOP (Action, Action) Int | Function (Action, Action, Action) deriving (Show, Eq)
 
 actions :: [Action]
-actions = [LEFT, UP, DOWN, RIGHT]
+actions = [Left, Up, Down, Right]
 
 getFile :: String -> IO [String]
 getFile fileName = do
@@ -61,16 +64,16 @@ findBonuses [] = []
 findBonuses ((x, y, val) : xs) = if val == Star then (x, y) : findBonuses xs else findBonuses xs
 
 applyAction :: [[Tile]] -> (Int, Int) -> Action -> (Int, Int)
-applyAction board (x, y) UP = if ((board !! (x - 1)) !! y) /= Grass then (x - 1, y) else (-1, -1)
-applyAction board (x, y) DOWN = if ((board !! (x + 1)) !! y) /= Grass then (x + 1, y) else (-1, -1)
-applyAction board (x, y) LEFT = if ((board !! x) !! (y - 1)) /= Grass then (x, y - 1) else (-1, -1)
-applyAction board (x, y) RIGHT = if ((board !! x) !! (y + 1)) /= Grass then (x, y + 1) else (-1, -1)
+applyAction board (x, y) Up = if ((board !! (x - 1)) !! y) /= Grass then (x - 1, y) else (-1, -1)
+applyAction board (x, y) Down = if ((board !! (x + 1)) !! y) /= Grass then (x + 1, y) else (-1, -1)
+applyAction board (x, y) Left = if ((board !! x) !! (y - 1)) /= Grass then (x, y - 1) else (-1, -1)
+applyAction board (x, y) Right = if ((board !! x) !! (y + 1)) /= Grass then (x, y + 1) else (-1, -1)
 
 validAction :: [[Tile]] -> (Int, Int) -> Action -> Bool
-validAction _ (x, _) UP = (x - 1) >= 0
-validAction _ (_, y) LEFT = (y - 1) >= 0
-validAction board (_, y) RIGHT = (y + 1) < length (head board)
-validAction board (x, _) DOWN = (x + 1) < length board
+validAction _ (x, _) Up = (x - 1) >= 0
+validAction _ (_, y) Left = (y - 1) >= 0
+validAction board (_, y) Right = (y + 1) < length (head board)
+validAction board (x, _) Down = (x + 1) < length board
 
 getSuccessors :: [[Tile]] -> (Int, Int) -> [(Int, Int)] -> [(Int, Int)]
 getSuccessors board state visited = [applyAction board state action | action <- actions, validAction board state action, applyAction board state action /= (-1, -1) && not (elem (applyAction board state action) visited)]
@@ -148,22 +151,22 @@ notMove :: [[Tile]] -> (Int, Int) -> (Int, Int) -> Bool
 notMove board (x, y) (xNew, yNew) = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target && null (findBonuses (enumerator board)))
 
 applyContinous :: [[Tile]] -> (Int, Int) -> Action -> Bool -> ((Int, Int), Action, [[Tile]])
-applyContinous board (x, y) UP forced =
+applyContinous board (x, y) Up forced =
   if (x - 1 < 0) || (notMove board (x, y) (x -1, y) && not forced)
-    then ((x, y), UP, board)
-    else applyContinous (removeStar board (x, y)) (x - 1, y) UP False
-applyContinous board (x, y) DOWN forced =
+    then ((x, y), Up, board)
+    else applyContinous (removeStar board (x, y)) (x - 1, y) Up False
+applyContinous board (x, y) Down forced =
   if x + 1 >= length board || (notMove board (x, y) (x + 1, y) && not forced)
-    then ((x, y), DOWN, board)
-    else applyContinous (removeStar board (x, y)) (x + 1, y) DOWN False
-applyContinous board (x, y) LEFT forced =
+    then ((x, y), Down, board)
+    else applyContinous (removeStar board (x, y)) (x + 1, y) Down False
+applyContinous board (x, y) Left forced =
   if y - 1 < 0 || (notMove board (x, y) (x, y -1) && not forced)
-    then ((x, y), LEFT, board)
-    else applyContinous (removeStar board (x, y)) (x, y - 1) LEFT False
-applyContinous board (x, y) RIGHT forced =
+    then ((x, y), Left, board)
+    else applyContinous (removeStar board (x, y)) (x, y - 1) Left False
+applyContinous board (x, y) Right forced =
   if y + 1 >= length (head board) || (notMove board (x, y) (x, y + 1) && not forced)
-    then ((x, y), RIGHT, board)
-    else applyContinous (removeStar board (x, y)) (x, y + 1) RIGHT False
+    then ((x, y), Right, board)
+    else applyContinous (removeStar board (x, y)) (x, y + 1) Right False
 
 getThreeTupleHead :: (a, b, c) -> a
 getThreeTupleHead (pos, _, _) = pos
@@ -186,14 +189,13 @@ exploreNeighbours frontier
         visited ++ [(newState, length (findBonuses (enumerator newBoard)))],
         newBoard
       )
-      | (newState, newAction, newBoard) <- successors,
-        (newState, length (findBonuses (enumerator newBoard))) `notElem` visited
+      | (newState, newAction, newBoard) <- successors
     ]
   where
     (path, visited, board) = frontier
     (state, lastAction) = last path
     (x, y) = state
-    successors = getSolverSuccessors board state
+    successors = getSolverSuccessorsBFS board state visited
 
 findPathsBFS :: [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])] -> [([((Int, Int), Action)], [((Int, Int), Int)], [[Tile]])]
 findPathsBFS stack
@@ -219,18 +221,22 @@ extractCompletePaths stack = [path | (path, visited, _) <- stack, snd (last visi
 findOptimalPath :: [[((Int, Int), Action)]] -> [[Tile]] -> [Action]
 findOptimalPath path board = parsePath (minimumBy (comparing length) path) board
 
-parsePathConditions :: [((Int, Int), Action)] -> Bool -> Char -> [[Tile]] -> [((Int, Int), Action)]
-parsePathConditions [] _ _ _ = []
-parsePathConditions (((x, y), action) : remPath) prevCondition color board = if prevCondition then ((x, y), (Cond color action)) : parsedPath else ((x, y), action) : parsedPath
+parsePathConditions :: [((Int, Int), Action)] -> Bool -> Char -> Action -> [[Tile]] -> [((Int, Int), Action)]
+parsePathConditions [] _ _ _ _ = []
+parsePathConditions (((x, y), action) : remPath) prevCondition color prevAction board
+  | addCondition = ((x, y), Cond color action) : parsedPath
+  | not prevCondition = ((x, y), action) : parsedPath
+  | otherwise = parsedPath
   where
+    addCondition = prevCondition && (action /= prevAction)
     nextCond = (board !! x) !! y `elem` blockNodes
     (Condition nextColor) = if nextCond then (board !! x) !! y else Condition 'n'
-    parsedPath = parsePathConditions remPath nextCond nextColor board
+    parsedPath = parsePathConditions remPath nextCond nextColor action board
 
 loopAccumulator :: (Action, Action) -> [Action] -> Int -> (Int, [Action])
 loopAccumulator (action1, action2) stack count
   | length stack < 2 || count > 4 = (count, stack)
-  | otherwise = if stack !! 0 == action1 && stack !! 1 == action2 then loopAccumulator (action1, action2) (drop 2 stack) (count + 1) else (count, stack)
+  | otherwise = if head stack == action1 && stack !! 1 == action2 then loopAccumulator (action1, action2) (drop 2 stack) (count + 1) else (count, stack)
 
 createLoops :: [Action] -> [Action]
 createLoops stack
@@ -242,6 +248,7 @@ createLoops stack
     (loopCount, remList) = loopAccumulator (action1, action2) (drop 4 stack) 2
     result = LOOP (action1, action2) loopCount : createLoops remList
 
+-- Change it to create a function with the most frequently occuring pattern.
 createFunctions :: [Action] -> [Action]
 createFunctions [a, b] = [a, b]
 createFunctions [a] = [a]
@@ -249,20 +256,119 @@ createFunctions [] = []
 createFunctions (LOOP (a1, a2) x1 : b : c : remList) = LOOP (a1, a2) x1 : createFunctions (b : c : remList)
 createFunctions (b : LOOP (a1, a2) x1 : c : remList) = [b, LOOP (a1, a2) x1] ++ createFunctions (c : remList)
 createFunctions (b : c : LOOP (a1, a2) x1 : remList) = [b, c, LOOP (a1, a2) x1] ++ createFunctions remList
-createFunctions (a : b : c : remList) = FUNCTION (a, b, c) : createFunctions remList
+createFunctions (a : b : c : remList) = Function (a, b, c) : createFunctions (b : c : remList)
+
+extractFunctions [] = []
+extractFunctions (Function (a, b, c) : remList) = Function (a, b, c) : extractFunctions remList
+extractFunctions (x : remList) = extractFunctions remList
+
+mostFreqFunction :: [Action] -> Action
+mostFreqFunction list = fst $ maximumBy (compare `on` snd) elemCounts
+  where
+    elemCounts = nub [(element, count) | element <- list, let count = length (filter (== element) list)]
+
+replaceWithFunction :: [Action] -> Action -> [Action]
+replaceWithFunction actions fn
+  | length actions < 3 = actions
+  | otherwise = if head actions == a1 && actions !! 1 == a2 && actions !! 2 == a3 then fn : replaceWithFunction (drop 3 actions) fn else head actions : replaceWithFunction (tail actions) fn
+  where
+    Function (a1, a2, a3) = fn
+
+addFunctionToPath :: [Action] -> [Action]
+addFunctionToPath actions = if null functions then actions else replaceWithFunction actions (mostFreqFunction functions)
+  where
+    functions = extractFunctions $ createFunctions actions
 
 parsePath :: [((Int, Int), Action)] -> [[Tile]] -> [Action]
 parsePath optimalPath board = finalPathWithFunctions
   where
-    parsedWithCond = parsePathConditions optimalPath False 'n' board
+    parsedWithCond = parsePathConditions optimalPath False 'n' START board
     pathWithOnlyActions = [action | (_, action) <- parsedWithCond]
     parsedWithLoops = createLoops (tail pathWithOnlyActions) -- remove START
-    finalPathWithFunctions = createFunctions parsedWithLoops
+    finalPathWithFunctions = addFunctionToPath parsedWithLoops
 
 solve :: [[Tile]] -> [Action]
 solve board = findOptimalPath completePaths board
   where
     completePaths = findCompletePaths board
+
+createActionList :: [String] -> IO [String]
+createActionList actions = do
+  if null actions then putStr "First Direction: " else putStr "Next Direction: "
+  direction <- getLine
+  if direction == "" then return actions else do createActionList (actions ++ [direction])
+
+seperateByComma :: [Char] -> [[Char]]
+seperateByComma str = words [if c == ',' then ' ' else c | c <- str]
+
+parseAction :: [Char] -> Action
+parseAction "Left" = Left
+parseAction "Right" = Right
+parseAction "Up" = Up
+parseAction "Down" = Down
+parseAction action
+  | take 4 action == "Loop" = LOOP (parseAction action1Str, parseAction action2Str) loopFreq
+  | take 4 action == "Cond" = Cond condColor condAction
+  where
+    insideBracket = init (drop 5 action)
+    loopFreq = digitToInt (head insideBracket)
+    insideActions = drop 3 insideBracket
+    [action1Str, action2Str] = seperateByComma insideActions
+    condAction = parseAction insideActions
+    condColor = head insideBracket
+
+applyLoop board state loopFreq (action1, action2)
+  | loopFreq <= 0 = (state, board)
+  | otherwise = applyLoop finalBoard finalState (loopFreq - 1) (action1, action2)
+  where
+    (newState, newBoard) = applyPlayAction action1 state board
+    (finalState, finalBoard) = applyPlayAction action2 newState newBoard
+
+extractPosAndBoard :: (a, b1, b2) -> (a, b2)
+extractPosAndBoard = \(pos, _, board) -> (pos, board)
+
+applyPlayAction :: Action -> (Int, Int) -> [[Tile]] -> ((Int, Int), [[Tile]])
+applyPlayAction (LOOP (a1, a2) loopFreq) state board = applyLoop board state loopFreq (a1, a2)
+applyPlayAction (Cond color action) state board = extractPosAndBoard $ applyContinous board state action True
+applyPlayAction action state board = extractPosAndBoard $ applyContinous board state action False
+
+-- print board properly
+applyPlayActions :: [Action] -> (Int, Int) -> [[Tile]] -> IO ()
+applyPlayActions (action : actions) state board = do
+  let (newState, newBoard) = applyPlayAction action state board
+  print board
+  applyPlayActions actions newState newBoard
+
+game :: [Char] -> IO ()
+game fileName = do
+  fileContent <- getFile fileName
+  let board = makeBoard fileContent
+  print board
+  putStrLn "Board Loaded Successfully!"
+  input <- getLine
+  if take 4 input == "play"
+    then
+      ( do
+          let args = words input
+          if length args < 2
+            then
+              ( do
+                  actions <- createActionList []
+                  let parsedActions = map parseAction actions
+                  applyPlayActions parsedActions (findBall (enumerator board)) board
+                  putStrLn "Parse Actions Now"
+              )
+            else putStrLn "Play with Function"
+      )
+    else
+      ( if take 4 input == "quit"
+          then do putStrLn "Game Over"
+          else
+            ( if take 5 input == "solve"
+                then putStrLn "Solving"
+                else putStrLn "Invalid Input!"
+            )
+      )
 
 main :: IO ()
 main = do
@@ -274,12 +380,6 @@ main = do
   putStrLn ("Solvable: " ++ show solvable)
   let solution = solve board
   putStrLn ("Solution: " ++ show solution)
-
--- let completePaths = findCompletePaths board
--- putStrLn $ concat ["Path: " ++ show path ++ "\n" | path <- completePaths]
--- putStrLn ("Number of Paths: " ++ show (length completePaths))
--- let optimalPath = findOptimalPath completePaths board
--- putStrLn ("Solution: " ++ show optimalPath)
 
 mainGreedy :: IO ()
 mainGreedy = do
