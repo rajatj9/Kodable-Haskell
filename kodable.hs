@@ -8,7 +8,7 @@ import Prelude hiding (Left, Right)
 
 data Tile = Grass | Ball | Condition Char | Star | Path | Target deriving (Eq)
 
-data Action = Up | Down | Right | Left | START | Cond Char Action | LOOP (Action, Action) Int | Function (Action, Action, Action) deriving (Eq)
+data Action = Up | Down | Right | Left | START | Cond Char Action | LOOP (Action, Action) Int | Function (Action, Action, Action) | Invalid deriving (Eq)
 
 instance Show Tile where
   show Grass = "*"
@@ -330,7 +330,15 @@ createActionList :: [Action] -> IO [Action]
 createActionList actions = do
   if null actions then putStr "First Direction: " else putStr "Next Direction: "
   direction <- getLine
-  if direction == "" then return actions else do createActionList (actions ++ [parseAction direction])
+  if direction == ""
+    then return actions
+    else do
+      let action = parseAction direction
+      if action /= Invalid
+        then createActionList (actions ++ [parseAction direction])
+        else do
+          putStrLn "Invalid Action!"
+          createActionList actions
 
 createActionListWithFunction :: [Action] -> [String] -> IO [Action]
 createActionListWithFunction actions funcStr = do
@@ -339,7 +347,15 @@ createActionListWithFunction actions funcStr = do
   if direction == "Function"
     then do createActionListWithFunction (actions ++ [parseFunction funcStr]) funcStr
     else
-      ( if direction == "" then return actions else do createActionListWithFunction (actions ++ [parseAction direction]) funcStr
+      ( if direction == ""
+          then return actions
+          else do
+            let action = parseAction direction
+            if action /= Invalid
+              then createActionListWithFunction (actions ++ [parseAction direction]) funcStr
+              else do
+                putStrLn "Invalid Action"
+                createActionListWithFunction actions funcStr
       )
 
 seperateByComma :: [Char] -> [[Char]]
@@ -347,6 +363,11 @@ seperateByComma str = words [if c == ',' then ' ' else c | c <- str]
 
 parseFunction :: [String] -> Action
 parseFunction [a1, a2, a3] = Function (parseAction a1, parseAction a2, parseAction a3)
+
+parseActionWrapper :: [Char] -> IO Action
+parseActionWrapper actStr = do
+  let action = parseAction actStr
+  return action
 
 parseAction :: [Char] -> Action
 parseAction "Left" = Left
@@ -356,6 +377,7 @@ parseAction "Down" = Down
 parseAction action
   | take 4 action == "Loop" = LOOP (parseAction action1Str, parseAction action2Str) loopFreq
   | take 4 action == "Cond" = Cond condColor condAction
+  | otherwise = Invalid
   where
     insideBracket = init (drop 5 action)
     loopFreq = digitToInt (head insideBracket)
