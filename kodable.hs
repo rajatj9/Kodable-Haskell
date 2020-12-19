@@ -364,6 +364,7 @@ parseAction action
     condAction = parseAction insideActions
     condColor = head insideBracket
 
+applyLoop :: (Ord t, Num t) => [[Tile]] -> (Int, Int) -> t -> (Action, Action) -> ((Int, Int), [[Tile]])
 applyLoop board state loopFreq (action1, action2)
   | loopFreq <= 0 = (state, board)
   | otherwise = applyLoop finalBoard finalState (loopFreq - 1) (action1, action2)
@@ -371,19 +372,32 @@ applyLoop board state loopFreq (action1, action2)
     (newState, newBoard) = applyPlayAction action1 state board
     (finalState, finalBoard) = applyPlayAction action2 newState newBoard
 
+applyFunction :: [[Tile]] -> (Int, Int) -> (Action, Action, Action) -> ((Int, Int), [[Tile]])
 applyFunction board state (action1, action2, action3) = applyPlayAction action3 state2 board2
   where
     (state1, board1) = applyPlayAction action1 state board
     (state2, board2) = applyPlayAction action2 state1 board1
 
 extractPosAndBoard :: (a, b1, b2) -> (a, b2)
-extractPosAndBoard = \(pos, _, board) -> (pos, board)
+extractPosAndBoard (pos, _, board) = (pos, board)
 
 applyPlayAction :: Action -> (Int, Int) -> [[Tile]] -> ((Int, Int), [[Tile]])
 applyPlayAction (LOOP (a1, a2) loopFreq) state board = applyLoop board state loopFreq (a1, a2)
 applyPlayAction (Cond color action) state board = extractPosAndBoard $ applyContinous board state action True
 applyPlayAction (Function (a1, a2, a3)) state board = applyFunction board state (a1, a2, a3)
 applyPlayAction action state board = extractPosAndBoard $ applyContinous board state action False
+
+isLoopAction :: Action -> Bool
+isLoopAction (LOOP (_, _) _) = True
+isLoopAction _ = False
+
+isFunctionAction :: Action -> Bool
+isFunctionAction (Function (_, _, _)) = True
+isFunctionAction _ = False
+
+extractLastAction :: Action -> Action
+extractLastAction (LOOP (_, action) _) = action
+extractLastAction (Function (_, _, action)) = action
 
 -- print board properly
 applyPlayActions :: [Action] -> (Int, Int) -> [[Tile]] -> IO ()
@@ -393,7 +407,8 @@ applyPlayActions (action : actions) state board = do
   if (board !! newX) !! newY `elem` blockNodes && not (null actions) && (head actions `notElem` conditions)
     then do
       let (Condition color) = (board !! newX) !! newY
-      let newAction = Cond color action
+      let extractedAction = if isLoopAction action || isFunctionAction action then extractLastAction action else action
+      let newAction = Cond color extractedAction
       applyPlayActions (newAction : actions) (newX, newY) newBoard
     else
       ( if (newX, newY) == state
