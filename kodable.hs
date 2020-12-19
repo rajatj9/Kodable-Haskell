@@ -27,7 +27,8 @@ instance Show Action where
   show Left = "Left"
   show (Cond color act) = "Cond{" ++ [color] ++ "}{" ++ show act ++ "}"
   show (LOOP (a1, a2) freq) = "Loop{" ++ show freq ++ "}{" ++ show a1 ++ "," ++ show a2 ++ "}"
-  show (Function (a1, a2, a3)) = "Function with " ++ show a1 ++ " " ++ show a2 ++ " " ++ show a3
+  show (Function (a1, a2, a3)) = "(Function with " ++ show a1 ++ " " ++ show a2 ++ " " ++ show a3 ++ ")"
+  show Invalid = "Invalid"
 
 actions :: [Action]
 actions = [Left, Up, Down, Right]
@@ -38,6 +39,18 @@ colors = ['o', 'p', 'y']
 conditions :: [Action]
 conditions = [Cond color action | color <- colors, action <- actions]
 
+allSameLength :: [[Char]] -> Bool
+allSameLength [] = True
+allSameLength xs = all null xs || all (not . null) xs && allSameLength (map tail xs)
+
+validChars :: [Char]
+validChars = ['*', '-', 'p', 'o', 'y', 'b', '@', 't', ' ']
+
+validRow :: [Char] -> Bool
+validRow (x : ' ' : rem) = (x `elem` validChars) && validRow rem
+validRow [x] = x `elem` validChars
+validRow [] = True
+
 getFile :: String -> IO [String]
 getFile fileName = do
   fileChecker <- doesFileExist fileName
@@ -45,9 +58,23 @@ getFile fileName = do
     then do
       fileContents <- readFile fileName
       let fileLines = lines fileContents
-      return fileLines
+      if null fileLines
+        then do
+          putStrLn "Empty File! Try again."
+          return []
+        else -- if not (allSameLength fileLines)
+        --   then do
+        --     putStrLn "Invalid Board, Lines have different length. Try again."
+        --     return []
+        --   else
+
+          if all validRow fileLines
+            then return fileLines
+            else do
+              putStrLn "Invalid Board, File contains invalid characters. Try Again."
+              return []
     else do
-      putStrLn "Invalid input! The file does not exist in this directory"
+      putStrLn "Invalid input! The file does not exist in this directory. Try Again."
       return []
 
 load :: String -> IO [[Tile]]
@@ -326,36 +353,54 @@ solve board = findOptimalPath completePaths board
   where
     completePaths = findCompletePaths board
 
-createActionList :: [Action] -> IO [Action]
-createActionList actions = do
+createActionList :: [Action] -> [[Tile]] -> IO [Action]
+createActionList actions board = do
   if null actions then putStr "First Direction: " else putStr "Next Direction: "
   direction <- getLine
   if direction == ""
     then return actions
-    else do
-      let action = parseAction direction
-      if action /= Invalid
-        then createActionList (actions ++ [parseAction direction])
-        else do
-          putStrLn "Invalid Action!"
-          createActionList actions
-
-createActionListWithFunction :: [Action] -> [String] -> IO [Action]
-createActionListWithFunction actions funcStr = do
-  if null actions then putStr "First Direction: " else putStr "Next Direction: "
-  direction <- getLine
-  if direction == "Function"
-    then do createActionListWithFunction (actions ++ [parseFunction funcStr]) funcStr
     else
-      ( if direction == ""
-          then return actions
+      ( if direction == "Hint"
+          then do
+            let (state, newBoard) = applyPlayActionsNonIO actions (findBall (enumerator board)) board
+            let hint = head (solve (boardWithBall newBoard state))
+            putStrLn ("Hint: " ++ show hint)
+            createActionList actions newBoard
           else do
             let action = parseAction direction
             if action /= Invalid
-              then createActionListWithFunction (actions ++ [parseAction direction]) funcStr
+              then createActionList (actions ++ [parseAction direction]) board
               else do
-                putStrLn "Invalid Action"
-                createActionListWithFunction actions funcStr
+                putStrLn "Invalid Action!"
+                createActionList actions board
+      )
+
+createActionListWithFunction :: [Action] -> [[Tile]] -> [String] -> IO [Action]
+createActionListWithFunction actions board funcStr = do
+  if null actions then putStr "First Direction: " else putStr "Next Direction: "
+  direction <- getLine
+  if direction == "Function"
+    then do createActionListWithFunction (actions ++ [parseFunction funcStr]) board funcStr
+    else
+      ( if direction == ""
+          then return actions
+          else
+            ( if direction == "Hint"
+                then do
+                  let (state, newBoard) = applyPlayActionsNonIO actions (findBall (enumerator board)) board
+                  let hint = head (solve (boardWithBall newBoard state))
+                  putStrLn ("Hint: " ++ show hint)
+                  createActionList actions newBoard
+                else
+                  ( do
+                      let action = parseAction direction
+                      if action /= Invalid
+                        then createActionListWithFunction (actions ++ [parseAction direction]) board funcStr
+                        else do
+                          putStrLn "Invalid Action"
+                          createActionListWithFunction actions board funcStr
+                  )
+            )
       )
 
 seperateByComma :: [Char] -> [[Char]]
@@ -440,68 +485,131 @@ applyPlayActions (action : actions) state board = do
             putStrLn (boardString $ boardWithBall board state)
           else do
             putStrLn (boardString $ boardWithBall newBoard (newX, newY))
-            if null (findBonuses (enumerator newBoard)) && (board !! newX) !! newY == Target
-              then putStrLn "Congratulations! You win the game!"
+            if (board !! newX) !! newY == Target
+              then putStrLn ("Congratulations! You win the game " ++ "with " ++ show (length $ findBonuses (enumerator newBoard)) ++ "remaining bonuses.")
               else (if length (findBonuses (enumerator newBoard)) < length (findBonuses (enumerator board)) then putStrLn "Collected a bonus!" else putStrLn "")
             if not (null actions) then applyPlayActions actions (newX, newY) newBoard else putStrLn ""
       )
 
-game :: [Char] -> IO ()
-game fileName = do
-  fileContent <- getFile fileName
-  let board = makeBoard fileContent
-  putStrLn (boardString board)
-  putStrLn "Board Loaded Successfully!\n"
-  putStrLn "Options Available:"
-  putStrLn "check"
-  putStrLn "play"
-  putStrLn "solve"
-  input <- getLine
-  if take 4 input == "play"
-    then
-      ( do
-          let args = words input
-          if length args < 2
-            then
-              ( do
-                  actions <- createActionList []
-                  -- check if Actions are valid
-                  applyPlayActions actions (findBall (enumerator board)) board
-              )
-            else
-              ( do
-                  let fnActions = tail (words input)
-                  actions <- createActionListWithFunction [] fnActions
-                  applyPlayActions actions (findBall (enumerator board)) board
+applyPlayActionsNonIO :: [Action] -> (Int, Int) -> [[Tile]] -> ((Int, Int), [[Tile]])
+applyPlayActionsNonIO [] state board = (state, board)
+applyPlayActionsNonIO (action : actions) state board = do
+  let ((newX, newY), newBoard) = applyPlayAction action state board
+  if (board !! newX) !! newY `elem` blockNodes && not (null actions) && (head actions `notElem` conditions)
+    then do
+      let (Condition color) = (board !! newX) !! newY
+      let extractedAction = if isLoopAction action || isFunctionAction action then extractLastAction action else action
+      let newAction = Cond color extractedAction
+      applyPlayActionsNonIO (newAction : actions) (newX, newY) newBoard
+    else
+      ( if (newX, newY) == state
+          then ((newX, newY), newBoard)
+          else do
+            ( if ( null (findBonuses (enumerator newBoard))
+                     && (board !! newX) !! newY == Target
+                 )
+                || null actions
+                then ((newX, newY), newBoard)
+                else applyPlayActionsNonIO actions (newX, newY) newBoard
               )
       )
+
+game :: [[Tile]] -> IO ()
+game board = do
+  if board == [] then putStrLn "Welcome to the Game!" else putStrLn ""
+  putStrLn "Options Available:"
+  putStrLn "1. load -> load 'filename'"
+  putStrLn "2. check -> 'check'"
+  putStrLn "3. play -> 'play' or 'play Right Up Down;"
+  putStrLn "4. solve -> 'solve'"
+  putStrLn "5. quit -> 'quit'\n"
+  input <- getLine
+  if take 4 input == "load"
+    then
+      ( do
+          let fileName = init $ tail $ ((words input) !! 1)
+          fileContent <- getFile fileName
+          if not (null fileContent)
+            then do
+              let board = makeBoard fileContent
+              putStrLn (boardString board)
+              putStrLn "Board Loaded Successfully!\n"
+              game board
+            else game []
+      )
     else
-      ( if take 4 input == "quit"
-          then do putStrLn "Game Over"
+      ( if take 4 input == "play"
+          then
+            ( if null board
+                then do
+                  putStrLn "Please load a board first!"
+                  game []
+                else do
+                  let args = words input
+                  if length args < 2
+                    then
+                      ( do
+                          putStrLn "Type 'Hint' for asking for hints at any stage"
+                          actions <- createActionList [] board
+                          applyPlayActions actions (findBall (enumerator board)) board
+                          game board
+                      )
+                    else
+                      ( do
+                          putStrLn "Type 'Hint' for asking for hints at any stage"
+                          let fnActions = tail (words input)
+                          actions <- createActionListWithFunction [] board fnActions
+                          applyPlayActions actions (findBall (enumerator board)) board
+                          game board
+                      )
+            )
           else
-            ( if take 5 input == "solve"
-                then putStrLn "Solving"
-                else putStrLn "Invalid Input!"
+            ( if take 4 input == "quit"
+                then do
+                  putStrLn "\nGame Over! Thanks for playing!"
+                else
+                  ( if take 5 input == "solve"
+                      then
+                        if null board
+                          then do
+                            putStrLn "Please load a board first!"
+                            game []
+                          else do
+                            res <- check board
+                            if not res
+                              then do
+                                putStrLn "Board not solvable!"
+                                game board
+                              else do
+                                putStrLn "Solving"
+                                let solution = solve board
+                                putStrLn ("Solution: " ++ (unwords $ map show solution))
+                                game board
+                      else
+                        ( if take 5 input == "check"
+                            then
+                              if null board
+                                then do
+                                  putStrLn "Please load a board first!"
+                                  game []
+                                else do
+                                  res <- check board
+                                  putStrLn ("Solvable: " ++ show res)
+                                  game board
+                            else do
+                              putStrLn "Invalid Input!"
+                              game board
+                        )
+                  )
             )
       )
 
 main :: IO ()
-main = do
-  putStrLn "Enter File Name: "
-  fileName <- getLine
-  board <- load fileName
-  putStrLn "Board loaded successfully!"
-  solvable <- check board
-  putStrLn ("Solvable: " ++ show solvable)
-  let solution = solve board
-  putStrLn ("Solution: " ++ (unwords $ map show solution))
+main = game []
 
-mainGreedy :: IO ()
-mainGreedy = do
-  putStrLn "Enter File Name: "
+test = do
   fileName <- getLine
-  board <- load fileName
-  putStrLn "Board loaded successfully!"
-  solvable <- check board
-  putStrLn ("Solvable: " ++ show solvable)
-  findSolution board (findBall (enumerator board)) []
+  fileC <- getFile fileName
+  let board = makeBoard fileC
+  let (state, board) = applyPlayAction (LOOP (Up, Right) 2) (8, 5) board
+  putStrLn (boardString $ boardWithBall board state)
