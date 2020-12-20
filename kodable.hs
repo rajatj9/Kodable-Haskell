@@ -1,38 +1,14 @@
+module Kodable where
+
+import ActionParser
 import Data.Char
 import Data.Function (on)
 import Data.List (maximumBy, minimumBy, nub)
 import Data.Ord (comparing)
+import DataTypes
 import System.Directory (doesFileExist)
 import System.IO ()
 import Prelude hiding (Left, Right)
-
-data Tile = Grass | Ball | Condition Char | Star | Path | Target deriving (Eq)
-
-data Action = Up | Down | Right | Left | START | Cond Char Action | LOOP (Action, Action) Int | Function (Action, Action, Action) | Invalid deriving (Eq)
-
-type Board = [[Tile]]
-
-type Position = (Int, Int)
-
-instance Show Tile where
-  show Grass = "*"
-  show Path = "-"
-  show Star = "b"
-  show Ball = "@"
-  show (Condition 'p') = "p"
-  show (Condition 'o') = "o"
-  show (Condition 'y') = "y"
-  show Target = "t"
-
-instance Show Action where
-  show Up = "Up"
-  show Down = "Down"
-  show Right = "Right"
-  show Left = "Left"
-  show (Cond color act) = "Cond{" ++ [color] ++ "}{" ++ show act ++ "}"
-  show (LOOP (a1, a2) freq) = "Loop{" ++ show freq ++ "}{" ++ show a1 ++ "," ++ show a2 ++ "}"
-  show (Function (a1, a2, a3)) = "(Function with " ++ show a1 ++ " " ++ show a2 ++ " " ++ show a3 ++ ")"
-  show Invalid = "Invalid"
 
 actions :: [Action]
 actions = [Left, Up, Down, Right]
@@ -279,13 +255,11 @@ createLoops stack
 
 -- Change it to create a function with the most frequently occuring pattern.
 createFunctions :: [Action] -> [Action]
-createFunctions [a, b] = [a, b]
-createFunctions [a] = [a]
-createFunctions [] = []
 createFunctions (LOOP (a1, a2) x1 : b : c : remList) = LOOP (a1, a2) x1 : createFunctions (b : c : remList)
 createFunctions (b : LOOP (a1, a2) x1 : c : remList) = [b, LOOP (a1, a2) x1] ++ createFunctions (c : remList)
 createFunctions (b : c : LOOP (a1, a2) x1 : remList) = [b, c, LOOP (a1, a2) x1] ++ createFunctions remList
 createFunctions (a : b : c : remList) = Function (a, b, c) : createFunctions (b : c : remList)
+createFunctions x = x
 
 extractFunctions [] = []
 extractFunctions (Function (a, b, c) : remList) = Function (a, b, c) : extractFunctions remList
@@ -317,7 +291,7 @@ parsePath optimalPath board = finalPathWithFunctions
     finalPathWithFunctions = addFunctionToPath parsedWithLoops
 
 solve :: Board -> [Action]
-solve board = findOptimalPath completePaths board
+solve board = findOptimalPathConsiderLoopsAndFuncs completePaths board
   where
     completePaths = findCompletePaths board
 
@@ -381,23 +355,6 @@ parseActionWrapper :: [Char] -> IO Action
 parseActionWrapper actStr = do
   let action = parseAction actStr
   return action
-
-parseAction :: [Char] -> Action
-parseAction "Left" = Left
-parseAction "Right" = Right
-parseAction "Up" = Up
-parseAction "Down" = Down
-parseAction action
-  | take 4 action == "Loop" = LOOP (parseAction action1Str, parseAction action2Str) loopFreq
-  | take 4 action == "Cond" = Cond condColor condAction
-  | otherwise = Invalid
-  where
-    insideBracket = init (drop 5 action)
-    loopFreq = digitToInt (head insideBracket)
-    insideActions = drop 3 insideBracket
-    [action1Str, action2Str] = seperateByComma insideActions
-    condAction = parseAction insideActions
-    condColor = head insideBracket
 
 applyLoop :: Board -> Position -> Int -> Int -> (Action, Action) -> (Position, Board, Int)
 applyLoop board state numBonus loopFreq (action1, action2)
@@ -574,10 +531,3 @@ game board = do
 
 main :: IO ()
 main = game []
-
-test = do
-  fileName <- getLine
-  fileC <- getFile fileName
-  let board = makeBoard fileC
-  let (state, board, newBonus) = applyPlayAction (LOOP (Up, Right) 2) (8, 5) board 3
-  putStrLn (boardString $ boardWithBall board state)
