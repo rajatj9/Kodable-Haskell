@@ -17,7 +17,7 @@ instance Show Action where
   show Left = "Left"
   show (Cond color act) = "Cond{" ++ [color] ++ "}{" ++ show act ++ "}"
   show (LOOP (a1, a2) freq) = "Loop{" ++ show freq ++ "}{" ++ show a1 ++ "," ++ show a2 ++ "}"
-  show (Function (a1, a2, a3)) = "(Function with " ++ show a1 ++ " " ++ show a2 ++ " " ++ show a3 ++ ")"
+  show (Function (a1, a2, a3)) = "with " ++ show a1 ++ " " ++ show a2 ++ " " ++ show a3
   show Invalid = "Invalid"
 
 instance Show Tile where

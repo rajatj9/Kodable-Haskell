@@ -2,6 +2,7 @@ module ParsePathUtils where
 
 import Data.Function (on)
 import Data.List (maximumBy, nub)
+import Data.Maybe (fromJust, isNothing)
 import DataTypes
 
 parsePathConditions :: [(Position, Action)] -> Bool -> Char -> Action -> Board -> [(Position, Action)]
@@ -67,3 +68,17 @@ parsePath optimalPath board = finalPathWithFunctions
     pathWithOnlyActions = [action | (_, action) <- parsedWithCond]
     parsedWithLoops = createLoops (tail pathWithOnlyActions) -- remove START
     finalPathWithFunctions = addFunctionToPath parsedWithLoops
+
+findFunction :: [Action] -> Maybe Action
+findFunction [] = Nothing
+findFunction (Function (a1, a2, a3) : xs) = Just (Function (a1, a2, a3))
+findFunction (_ : xs) = findFunction xs
+
+isFunction (Function (_, _, _)) = True
+isFunction _ = False
+
+stringifyPath :: [Action] -> String
+stringifyPath path = if isNothing functionInPath then unwords formedStringArray else unwords (formedStringArray ++ [show $ fromJust functionInPath])
+  where
+    formedStringArray = [if isFunction direction then "Function" else show direction | direction <- path]
+    functionInPath = findFunction path

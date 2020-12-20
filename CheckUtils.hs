@@ -5,11 +5,26 @@ import Prelude hiding (Left, Right)
 
 actions = [Left, Up, Down, Right]
 
-applyAction :: Board -> Position -> Action -> Position
-applyAction board (x, y) Up = if ((board !! (x - 1)) !! y) /= Grass then (x - 1, y) else (-1, -1)
-applyAction board (x, y) Down = if ((board !! (x + 1)) !! y) /= Grass then (x + 1, y) else (-1, -1)
-applyAction board (x, y) Left = if ((board !! x) !! (y - 1)) /= Grass then (x, y - 1) else (-1, -1)
-applyAction board (x, y) Right = if ((board !! x) !! (y + 1)) /= Grass then (x, y + 1) else (-1, -1)
+dontMove :: Board -> Position -> Position -> Bool
+dontMove board (x, y) (xNew, yNew) = ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target)
+
+applyAction :: Board -> Position -> Action -> (Position, Board)
+applyAction board (x, y) Up =
+  if (x - 1 < 0) || (dontMove board (x, y) (x -1, y))
+    then ((x, y), board)
+    else applyAction board (x - 1, y) Up
+applyAction board (x, y) Down =
+  if x + 1 >= length board || (dontMove board (x, y) (x + 1, y))
+    then ((x, y), board)
+    else applyAction board (x + 1, y) Down
+applyAction board (x, y) Left =
+  if y - 1 < 0 || (dontMove board (x, y) (x, y -1))
+    then ((x, y), board)
+    else applyAction board (x, y - 1) Left
+applyAction board (x, y) Right =
+  if y + 1 >= length (head board) || (dontMove board (x, y) (x, y + 1))
+    then ((x, y), board)
+    else applyAction board (x, y + 1) Right
 
 validAction :: Board -> Position -> Action -> Bool
 validAction _ (x, _) Up = (x - 1) >= 0
@@ -18,7 +33,7 @@ validAction board (_, y) Right = (y + 1) < length (head board)
 validAction board (x, _) Down = (x + 1) < length board
 
 getSuccessors :: Board -> Position -> [Position] -> [Position]
-getSuccessors board state visited = [applyAction board state action | action <- actions, validAction board state action, applyAction board state action /= (-1, -1) && not (elem (applyAction board state action) visited)]
+getSuccessors board state visited = [fst $ applyAction board state action | action <- actions, (fst $ applyAction board state action) `notElem` visited]
 
 dfs :: Board -> [[Position]] -> [Position] -> IO Bool
 dfs board stack visited

@@ -1,6 +1,14 @@
 import BoardUtils
-import DataTypes
-import Kodable
+  ( boardString,
+    enumerator,
+    findBall,
+    findBonuses,
+    getFile,
+    makeBoard,
+  )
+import DataTypes (Board)
+import Kodable (applyPlayActions, createActionList, solve)
+import ParsePathUtils (stringifyPath)
 
 game :: Board -> IO ()
 game board = do
@@ -55,37 +63,25 @@ game board = do
                 then do
                   putStrLn "\nGame Over! Thanks for playing!"
                 else
-                  ( if take 5 input == "solve"
+                  ( if take 5 input == "solve" || take 5 input == "check"
                       then
                         if null board
                           then do
                             putStrLn "Please load a board first!"
                             game []
                           else do
-                            res <- check board
-                            if not res
+                            let solution = solve board
+                            if null solution
                               then do
                                 putStrLn "Board not solvable!"
                                 game board
                               else do
-                                putStrLn "Solving"
-                                let solution = solve board
-                                putStrLn ("Solution: " ++ (unwords $ map show solution))
+                                if (take 5 input) == "solve" then putStrLn ("Solution: " ++ stringifyPath solution) else putStrLn ("Solvable: " ++ show (not (null solution)))
                                 game board
                       else
-                        ( if take 5 input == "check"
-                            then
-                              if null board
-                                then do
-                                  putStrLn "Please load a board first!"
-                                  game []
-                                else do
-                                  res <- check board
-                                  putStrLn ("Solvable: " ++ show res)
-                                  game board
-                            else do
-                              putStrLn "Invalid Input!"
-                              game board
+                        ( do
+                            putStrLn "Invalid Input!"
+                            game board
                         )
                   )
             )

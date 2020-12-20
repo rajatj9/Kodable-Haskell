@@ -102,6 +102,7 @@ findCompletePaths board = extractCompletePaths $ findPathsBFS [([(ballPos, START
     initBonus = length (findBonuses $ enumerator board)
 
 findUnCollectableBonuses :: [([(Position, Action)], [(Position, Int)], Board, Int)] -> Int
+findUnCollectableBonuses [] = -1
 findUnCollectableBonuses stack = minimum [numBonus | (path, visited, board, numBonus) <- stack]
 
 extractCompletePaths :: [([(Position, Action)], [(Position, Int)], Board, Int)] -> [[(Position, Action)]]
@@ -113,6 +114,7 @@ findOptimalPath :: [[(Position, Action)]] -> Board -> [Action]
 findOptimalPath path board = parsePath (minimumBy (comparing length) path) board
 
 findOptimalPathConsiderLoopsAndFuncs :: [[(Position, Action)]] -> Board -> [Action]
+findOptimalPathConsiderLoopsAndFuncs [] board = []
 findOptimalPathConsiderLoopsAndFuncs path board = minimumBy (comparing length) (map (\p -> parsePath p board) path)
 
 solve :: Board -> [Action]
@@ -134,7 +136,8 @@ createActionList actions board funcStr = do
                 then do
                   let (state, newBoard, newBonus) = applyPlayActionsForHint actions (findBall (enumerator board)) board (length $ findBonuses $ enumerator board)
                   let hint = head (solve (boardWithBall newBoard state))
-                  putStrLn ("Hint: " ++ show hint)
+                  let hintStr = if isFunction hint then "Function " ++ show hint else show hint
+                  putStrLn ("Hint: " ++ hintStr)
                   createActionList actions newBoard funcStr
                 else
                   ( do
