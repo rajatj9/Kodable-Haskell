@@ -175,51 +175,55 @@ isBlockNode board (x, y) = ((board !! x) !! y) `elem` blockNodes
 removeStar :: Board -> Position -> Board
 removeStar board (x, y) = [[if x1 == x && y == y1 && tile == Star then Path else tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
 
-notMove :: Board -> Position -> Position -> Bool
-notMove board (x, y) (xNew, yNew) = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target)
+notMove :: Board -> Position -> Position -> Int -> Bool
+notMove board (x, y) (xNew, yNew) numBonus = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target)
 
-applyContinous :: Board -> Position -> Action -> Bool -> (Position, Action, Board)
-applyContinous board (x, y) Up forced =
-  if (x - 1 < 0) || (notMove board (x, y) (x -1, y) && not forced)
-    then ((x, y), Up, board)
-    else applyContinous (removeStar board (x, y)) (x - 1, y) Up False
-applyContinous board (x, y) Down forced =
-  if x + 1 >= length board || (notMove board (x, y) (x + 1, y) && not forced)
-    then ((x, y), Down, board)
-    else applyContinous (removeStar board (x, y)) (x + 1, y) Down False
-applyContinous board (x, y) Left forced =
-  if y - 1 < 0 || (notMove board (x, y) (x, y -1) && not forced)
-    then ((x, y), Left, board)
-    else applyContinous (removeStar board (x, y)) (x, y - 1) Left False
-applyContinous board (x, y) Right forced =
-  if y + 1 >= length (head board) || (notMove board (x, y) (x, y + 1) && not forced)
-    then ((x, y), Right, board)
-    else applyContinous (removeStar board (x, y)) (x, y + 1) Right False
+newBonus :: Num p => Board -> Position -> p -> p
+newBonus board (x, y) prevBonus = if (board !! x) !! y == Star then prevBonus - 1 else prevBonus
 
-getStateAndBonuses :: (Position, Action, Board) -> (Position, Int)
-getStateAndBonuses (pos, action, board) = (pos, length (findBonuses (enumerator board)))
+applyContinous :: Board -> Position -> Action -> Bool -> Int -> (Position, Action, Board, Int)
+applyContinous board (x, y) Up forced numBonus =
+  if (x - 1 < 0) || (notMove board (x, y) (x -1, y) numBonus && not forced)
+    then ((x, y), Up, board, numBonus)
+    else applyContinous (removeStar board (x, y)) (x - 1, y) Up False (newBonus board (x, y) numBonus)
+applyContinous board (x, y) Down forced numBonus =
+  if x + 1 >= length board || (notMove board (x, y) (x + 1, y) numBonus && not forced)
+    then ((x, y), Down, board, numBonus)
+    else applyContinous (removeStar board (x, y)) (x + 1, y) Down False (newBonus board (x, y) numBonus)
+applyContinous board (x, y) Left forced numBonus =
+  if y - 1 < 0 || (notMove board (x, y) (x, y -1) numBonus && not forced)
+    then ((x, y), Left, board, numBonus)
+    else applyContinous (removeStar board (x, y)) (x, y - 1) Left False (newBonus board (x, y) numBonus)
+applyContinous board (x, y) Right forced numBonus =
+  if y + 1 >= length (head board) || (notMove board (x, y) (x, y + 1) numBonus && not forced)
+    then ((x, y), Right, board, numBonus)
+    else applyContinous (removeStar board (x, y)) (x, y + 1) Right False (newBonus board (x, y) numBonus)
 
-getSolverSuccessorsBFS :: Board -> Position -> [(Position, Int)] -> [(Position, Action, Board)]
-getSolverSuccessorsBFS board state visited = [applyContinous board state action (isBlockNode board state) | action <- actions, validAction board state action, getStateAndBonuses (applyContinous board state action (isBlockNode board state)) `notElem` visited]
+getStateAndBonuses :: (Position, Action, Board, Int) -> (Position, Int)
+getStateAndBonuses (pos, action, board, numBonus) = (pos, numBonus)
 
-exploreNeighbours :: ([(Position, Action)], [(Position, Int)], Board) -> [([(Position, Action)], [(Position, Int)], Board)]
+getSolverSuccessorsBFS :: Board -> Position -> [(Position, Int)] -> Int -> [(Position, Action, Board, Int)]
+getSolverSuccessorsBFS board state visited numBonus = [applyContinous board state action (isBlockNode board state) numBonus | action <- actions, validAction board state action, getStateAndBonuses (applyContinous board state action (isBlockNode board state) numBonus) `notElem` visited]
+
+exploreNeighbours :: ([(Position, Action)], [(Position, Int)], Board, Int) -> [([(Position, Action)], [(Position, Int)], Board, Int)]
 exploreNeighbours frontier
   | ((board !! x) !! y) == Target = [frontier]
   | null successors = []
   | otherwise =
     [ ( path ++ [(newState, newAction)],
-        visited ++ [(newState, length (findBonuses (enumerator newBoard)))],
-        newBoard
+        visited ++ [(newState, newBonus)],
+        newBoard,
+        newBonus
       )
-      | (newState, newAction, newBoard) <- successors
+      | (newState, newAction, newBoard, newBonus) <- successors
     ]
   where
-    (path, visited, board) = frontier
+    (path, visited, board, bonusCount) = frontier
     (state, lastAction) = last path
     (x, y) = state
-    successors = getSolverSuccessorsBFS board state visited
+    successors = getSolverSuccessorsBFS board state visited bonusCount
 
-findPathsBFS :: [([(Position, Action)], [(Position, Int)], Board)] -> [([(Position, Action)], [(Position, Int)], Board)]
+findPathsBFS :: [([(Position, Action)], [(Position, Int)], Board, Int)] -> [([(Position, Action)], [(Position, Int)], Board, Int)]
 findPathsBFS stack
   | stack == newStack = stack -- All frontiers have reached Target (no new neighbours)
   | otherwise = findPathsBFS newStack
@@ -227,16 +231,16 @@ findPathsBFS stack
     newStack = concat [exploreNeighbours frontier | frontier <- stack]
 
 findCompletePaths :: Board -> [[(Position, Action)]]
-findCompletePaths board = extractCompletePaths $ findPathsBFS [([(ballPos, START)], [(ballPos, initBonus)], board)]
+findCompletePaths board = extractCompletePaths $ findPathsBFS [([(ballPos, START)], [(ballPos, initBonus)], board, (length $ findBonuses $ enumerator board))]
   where
     ballPos = findBall (enumerator board)
     initBonus = length (findBonuses $ enumerator board)
 
-findUnCollectableBonuses :: [([(Position, Action)], [(Position, Int)], Board)] -> Int
-findUnCollectableBonuses stack = minimum [snd (last visited) | (path, visited, board) <- stack]
+findUnCollectableBonuses :: [([(Position, Action)], [(Position, Int)], Board, Int)] -> Int
+findUnCollectableBonuses stack = minimum [numBonus | (path, visited, board, numBonus) <- stack]
 
-extractCompletePaths :: [([(Position, Action)], [(Position, Int)], Board)] -> [[(Position, Action)]]
-extractCompletePaths stack = [path | (path, visited, _) <- stack, snd (last visited) == unCollectableBonuses]
+extractCompletePaths :: [([(Position, Action)], [(Position, Int)], Board, Int)] -> [[(Position, Action)]]
+extractCompletePaths stack = [path | (path, visited, _, numBonus) <- stack, numBonus == unCollectableBonuses]
   where
     unCollectableBonuses = findUnCollectableBonuses stack
 
@@ -326,7 +330,7 @@ createActionList actions board = do
     else
       ( if direction == "Hint"
           then do
-            let (state, newBoard) = applyPlayActionsNonIO actions (findBall (enumerator board)) board
+            let (state, newBoard, newBonus) = applyPlayActionsNonIO actions (findBall (enumerator board)) board (length $ findBonuses $ enumerator board)
             let hint = head (solve (boardWithBall newBoard state))
             putStrLn ("Hint: " ++ show hint)
             createActionList actions newBoard
@@ -351,7 +355,7 @@ createActionListWithFunction actions board funcStr = do
           else
             ( if direction == "Hint"
                 then do
-                  let (state, newBoard) = applyPlayActionsNonIO actions (findBall (enumerator board)) board
+                  let (state, newBoard, newBonus) = applyPlayActionsNonIO actions (findBall (enumerator board)) board (length $ findBonuses $ enumerator board)
                   let hint = head (solve (boardWithBall newBoard state))
                   putStrLn ("Hint: " ++ show hint)
                   createActionList actions newBoard
@@ -395,28 +399,28 @@ parseAction action
     condAction = parseAction insideActions
     condColor = head insideBracket
 
-applyLoop :: (Ord t, Num t) => Board -> Position -> t -> (Action, Action) -> (Position, Board)
-applyLoop board state loopFreq (action1, action2)
-  | loopFreq <= 0 = (state, board)
-  | otherwise = applyLoop finalBoard finalState (loopFreq - 1) (action1, action2)
+applyLoop :: Board -> Position -> Int -> Int -> (Action, Action) -> (Position, Board, Int)
+applyLoop board state numBonus loopFreq (action1, action2)
+  | loopFreq <= 0 = (state, board, numBonus)
+  | otherwise = applyLoop finalBoard finalState finalBonus (loopFreq - 1) (action1, action2)
   where
-    (newState, newBoard) = applyPlayAction action1 state board
-    (finalState, finalBoard) = applyPlayAction action2 newState newBoard
+    (newState, newBoard, newBonus) = applyPlayAction action1 state board numBonus
+    (finalState, finalBoard, finalBonus) = applyPlayAction action2 newState newBoard newBonus
 
-applyFunction :: Board -> Position -> (Action, Action, Action) -> (Position, Board)
-applyFunction board state (action1, action2, action3) = applyPlayAction action3 state2 board2
+applyFunction :: Board -> Position -> Int -> (Action, Action, Action) -> (Position, Board, Int)
+applyFunction board state numBonus (action1, action2, action3) = applyPlayAction action3 state2 board2 bonus2
   where
-    (state1, board1) = applyPlayAction action1 state board
-    (state2, board2) = applyPlayAction action2 state1 board1
+    (state1, board1, bonus1) = applyPlayAction action1 state board numBonus
+    (state2, board2, bonus2) = applyPlayAction action2 state1 board1 bonus1
 
-extractPosAndBoard :: (a, b1, b2) -> (a, b2)
-extractPosAndBoard (pos, _, board) = (pos, board)
+extractPosAndBoard :: (a, b1, b2, b3) -> (a, b2, b3)
+extractPosAndBoard (pos, _, board, numBonus) = (pos, board, numBonus)
 
-applyPlayAction :: Action -> Position -> Board -> (Position, Board)
-applyPlayAction (LOOP (a1, a2) loopFreq) state board = applyLoop board state loopFreq (a1, a2)
-applyPlayAction (Cond color action) state board = extractPosAndBoard $ applyContinous board state action True
-applyPlayAction (Function (a1, a2, a3)) state board = applyFunction board state (a1, a2, a3)
-applyPlayAction action state board = extractPosAndBoard $ applyContinous board state action False
+applyPlayAction :: Action -> Position -> Board -> Int -> (Position, Board, Int)
+applyPlayAction (LOOP (a1, a2) loopFreq) state board numBonus = applyLoop board state numBonus loopFreq (a1, a2)
+applyPlayAction (Cond color action) state board numBonus = extractPosAndBoard $ applyContinous board state action True numBonus
+applyPlayAction (Function (a1, a2, a3)) state board numBonus = applyFunction board state numBonus (a1, a2, a3)
+applyPlayAction action state board numBonus = extractPosAndBoard $ applyContinous board state action False numBonus
 
 isLoopAction :: Action -> Bool
 isLoopAction (LOOP (_, _) _) = True
@@ -431,16 +435,16 @@ extractLastAction (LOOP (_, action) _) = action
 extractLastAction (Function (_, _, action)) = action
 
 -- print board properly
-applyPlayActions :: [Action] -> Position -> Board -> IO ()
-applyPlayActions (action : actions) state board = do
-  let ((newX, newY), newBoard) = applyPlayAction action state board
+applyPlayActions :: [Action] -> Position -> Board -> Int -> IO ()
+applyPlayActions (action : actions) state board numBonus = do
+  let ((newX, newY), newBoard, newBonus) = applyPlayAction action state board numBonus
   -- if we reach a condition tile and the next action is not a Conditional action then keep moving
   if (board !! newX) !! newY `elem` blockNodes && not (null actions) && (head actions `notElem` conditions)
     then do
       let (Condition color) = (board !! newX) !! newY
       let extractedAction = if isLoopAction action || isFunctionAction action then extractLastAction action else action
       let newAction = Cond color extractedAction
-      applyPlayActions (newAction : actions) (newX, newY) newBoard
+      applyPlayActions (newAction : actions) (newX, newY) newBoard newBonus
     else
       ( if (newX, newY) == state
           then do
@@ -450,31 +454,31 @@ applyPlayActions (action : actions) state board = do
           else do
             putStrLn (boardString $ boardWithBall newBoard (newX, newY))
             if (board !! newX) !! newY == Target
-              then putStrLn ("Congratulations! You win the game " ++ "with " ++ show (length $ findBonuses (enumerator newBoard)) ++ "remaining bonuses.")
-              else (if length (findBonuses (enumerator newBoard)) < length (findBonuses (enumerator board)) then putStrLn "Collected a bonus!" else putStrLn "")
-            if not (null actions) then applyPlayActions actions (newX, newY) newBoard else putStrLn ""
+              then putStrLn ("Congratulations! You win the game " ++ "with " ++ show (newBonus) ++ "remaining bonuses.")
+              else (if newBonus < numBonus then putStrLn "Collected a bonus!" else putStrLn "")
+            if not (null actions) then applyPlayActions actions (newX, newY) newBoard newBonus else putStrLn ""
       )
 
-applyPlayActionsNonIO :: [Action] -> Position -> Board -> (Position, Board)
-applyPlayActionsNonIO [] state board = (state, board)
-applyPlayActionsNonIO (action : actions) state board = do
-  let ((newX, newY), newBoard) = applyPlayAction action state board
+applyPlayActionsNonIO :: [Action] -> Position -> Board -> Int -> (Position, Board, Int)
+applyPlayActionsNonIO [] state board numBonus = (state, board, numBonus)
+applyPlayActionsNonIO (action : actions) state board numBonus = do
+  let ((newX, newY), newBoard, newBonus) = applyPlayAction action state board numBonus
   if (board !! newX) !! newY `elem` blockNodes && not (null actions) && (head actions `notElem` conditions)
     then do
       let (Condition color) = (board !! newX) !! newY
       let extractedAction = if isLoopAction action || isFunctionAction action then extractLastAction action else action
       let newAction = Cond color extractedAction
-      applyPlayActionsNonIO (newAction : actions) (newX, newY) newBoard
+      applyPlayActionsNonIO (newAction : actions) (newX, newY) newBoard newBonus
     else
       ( if (newX, newY) == state
-          then ((newX, newY), newBoard)
+          then ((newX, newY), newBoard, newBonus)
           else do
             ( if ( null (findBonuses (enumerator newBoard))
                      && (board !! newX) !! newY == Target
                  )
                 || null actions
-                then ((newX, newY), newBoard)
-                else applyPlayActionsNonIO actions (newX, newY) newBoard
+                then ((newX, newY), newBoard, newBonus)
+                else applyPlayActionsNonIO actions (newX, newY) newBoard newBonus
               )
       )
 
@@ -515,7 +519,7 @@ game board = do
                       ( do
                           putStrLn "Type 'Hint' for asking for hints at any stage"
                           actions <- createActionList [] board
-                          applyPlayActions actions (findBall (enumerator board)) board
+                          applyPlayActions actions (findBall (enumerator board)) board (length $ findBonuses $ enumerator board)
                           game board
                       )
                     else
@@ -523,7 +527,7 @@ game board = do
                           putStrLn "Type 'Hint' for asking for hints at any stage"
                           let fnActions = tail (words input)
                           actions <- createActionListWithFunction [] board fnActions
-                          applyPlayActions actions (findBall (enumerator board)) board
+                          applyPlayActions actions (findBall (enumerator board)) board (length $ findBonuses $ enumerator board)
                           game board
                       )
             )
@@ -575,5 +579,5 @@ test = do
   fileName <- getLine
   fileC <- getFile fileName
   let board = makeBoard fileC
-  let (state, board) = applyPlayAction (LOOP (Up, Right) 2) (8, 5) board
+  let (state, board, newBonus) = applyPlayAction (LOOP (Up, Right) 2) (8, 5) board 3
   putStrLn (boardString $ boardWithBall board state)
