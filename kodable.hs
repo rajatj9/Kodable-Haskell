@@ -39,7 +39,7 @@ colors = ['o', 'p', 'y']
 conditions :: [Action]
 conditions = [Cond color action | color <- colors, action <- actions]
 
-allSameLength :: [[Char]] -> Bool
+allSameLength :: [[String]] -> Bool
 allSameLength [] = True
 allSameLength xs = all null xs || all (not . null) xs && allSameLength (map tail xs)
 
@@ -47,9 +47,7 @@ validChars :: [Char]
 validChars = ['*', '-', 'p', 'o', 'y', 'b', '@', 't', ' ']
 
 validRow :: [Char] -> Bool
-validRow (x : ' ' : rem) = (x `elem` validChars) && validRow rem
-validRow [x] = x `elem` validChars
-validRow [] = True
+validRow = foldr (\x -> (&&) (x `elem` validChars)) True
 
 getFile :: String -> IO [String]
 getFile fileName = do
@@ -62,17 +60,17 @@ getFile fileName = do
         then do
           putStrLn "Empty File! Try again."
           return []
-        else -- if not (allSameLength fileLines)
-        --   then do
-        --     putStrLn "Invalid Board, Lines have different length. Try again."
-        --     return []
-        --   else
-
-          if all validRow fileLines
-            then return fileLines
-            else do
-              putStrLn "Invalid Board, File contains invalid characters. Try Again."
+        else
+          if not (allSameLength (map words fileLines))
+            then do
+              putStrLn "Invalid Board, Lines have different length. Try again."
               return []
+            else
+              if all validRow fileLines
+                then return fileLines
+                else do
+                  putStrLn "Invalid Board, File contains invalid characters. Try Again."
+                  return []
     else do
       putStrLn "Invalid input! The file does not exist in this directory. Try Again."
       return []
@@ -516,13 +514,13 @@ applyPlayActionsNonIO (action : actions) state board = do
 
 game :: [[Tile]] -> IO ()
 game board = do
-  if board == [] then putStrLn "Welcome to the Game!" else putStrLn ""
+  if board == [] then putStrLn "Welcome to the Game!\n" else putStrLn ""
   putStrLn "Options Available:"
-  putStrLn "1. load -> load 'filename'"
-  putStrLn "2. check -> 'check'"
-  putStrLn "3. play -> 'play' or 'play Right Up Down;"
-  putStrLn "4. solve -> 'solve'"
-  putStrLn "5. quit -> 'quit'\n"
+  putStrLn "1. Load a board -> load \"filename\""
+  putStrLn "2. Check if loaded board is solvable -> check"
+  putStrLn "3. Play on current board -> play or play Right Up Down to specify function arguments."
+  putStrLn "4. Find optimal solution for current board -> solve"
+  putStrLn "5. Quit the game -> quit\n"
   input <- getLine
   if take 4 input == "load"
     then
