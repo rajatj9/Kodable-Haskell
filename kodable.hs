@@ -175,41 +175,6 @@ isBlockNode board (x, y) = ((board !! x) !! y) `elem` blockNodes
 removeStar :: Board -> Position -> Board
 removeStar board (x, y) = [[if x1 == x && y == y1 && tile == Star then Path else tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
 
-manhattanDistance :: Num a => (a, a) -> (a, a) -> a
-manhattanDistance (x1, y1) (x2, y2) = abs (x1 - x2) + abs (y1 - y2)
-
-closestBonus :: (Ord a, Num a, Num a) => (a, a) -> [(a, a)] -> ((a, a), a)
-closestBonus (x1, y1) bonuses = minimumBy (comparing snd) bonusAndDistance
-  where
-    newBonuses = [(x, y) | (x, y) <- bonuses, (x1, y1) /= (x, y)]
-    bonusAndDistance = zip bonuses (map (manhattanDistance (x1, y1)) newBonuses)
-
-heuristic :: Board -> Position -> Int
-heuristic board (x, y) =
-  if null bonuses
-    then manhattanDistance (x, y) (findTarget enumeratedBoard)
-    else bonusDist + heuristic (removeStar board bonusPos) bonusPos
-  where
-    enumeratedBoard = enumerator board
-    bonuses = findBonuses enumeratedBoard
-    (bonusPos, bonusDist) = closestBonus (x, y) bonuses
-
-findSolution :: Board -> Position -> [Action] -> IO ()
-findSolution board state solution
-  | heuristic board state == 0 = print stateWithScores
-  | otherwise = do
-    putStrLn ("Current State: " ++ show state)
-    putStrLn ("Possible States: " ++ show statesWithoutBoard)
-    putStrLn ("Remaining Bonuses: " ++ show (findBonuses (enumerator board)))
-    putStrLn ("Heuristic at Current State: " ++ show (heuristic board state))
-    putStrLn ""
-    findSolution newBoard newState (solution ++ [action])
-  where
-    possibleStates = getSolverSuccessors board state
-    stateWithScores = map (\(newPos, action, possibleBoard) -> (heuristic possibleBoard newPos, newPos, action, possibleBoard)) possibleStates
-    statesWithoutBoard = map (\(a, b, c, d) -> (a, b, c)) stateWithScores
-    (f, newState, action, newBoard) = minimumBy (comparing (\(h, _, _, _) -> h)) stateWithScores
-
 notMove :: Board -> Position -> Position -> Bool
 notMove board (x, y) (xNew, yNew) = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target)
 
@@ -230,12 +195,6 @@ applyContinous board (x, y) Right forced =
   if y + 1 >= length (head board) || (notMove board (x, y) (x, y + 1) && not forced)
     then ((x, y), Right, board)
     else applyContinous (removeStar board (x, y)) (x, y + 1) Right False
-
-getThreeTupleHead :: (a, b, c) -> a
-getThreeTupleHead (pos, _, _) = pos
-
-getSolverSuccessors :: Board -> Position -> [(Position, Action, Board)]
-getSolverSuccessors board state = [applyContinous board state action (isBlockNode board state) | action <- actions, validAction board state action, getThreeTupleHead (applyContinous board state action (isBlockNode board state)) /= state]
 
 getStateAndBonuses :: (Position, Action, Board) -> (Position, Int)
 getStateAndBonuses (pos, action, board) = (pos, length (findBonuses (enumerator board)))
@@ -283,6 +242,9 @@ extractCompletePaths stack = [path | (path, visited, _) <- stack, snd (last visi
 
 findOptimalPath :: [[(Position, Action)]] -> Board -> [Action]
 findOptimalPath path board = parsePath (minimumBy (comparing length) path) board
+
+findOptimalPathConsiderLoopsAndFuncs :: [[(Position, Action)]] -> Board -> [Action]
+findOptimalPathConsiderLoopsAndFuncs path board = minimumBy (comparing length) (map (\p -> parsePath p board) path)
 
 parsePathConditions :: [(Position, Action)] -> Bool -> Char -> Action -> Board -> [(Position, Action)]
 parsePathConditions [] _ _ _ _ = []
