@@ -207,7 +207,7 @@ findSolution board state solution
     (f, newState, action, newBoard) = minimumBy (comparing (\(h, _, _, _) -> h)) stateWithScores
 
 notMove :: [[Tile]] -> (Int, Int) -> (Int, Int) -> Bool
-notMove board (x, y) (xNew, yNew) = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target && null (findBonuses (enumerator board)))
+notMove board (x, y) (xNew, yNew) = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target)
 
 applyContinous :: [[Tile]] -> (Int, Int) -> Action -> Bool -> ((Int, Int), Action, [[Tile]])
 applyContinous board (x, y) Up forced =
