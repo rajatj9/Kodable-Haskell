@@ -3,6 +3,7 @@ module AnsiUtils where
 import DataTypes
 import System.Console.ANSI
 
+-- prints every tile in corresponding colour
 tileToColor :: Tile -> IO ()
 tileToColor Star = do
   setSGR [SetColor Foreground Vivid Yellow]
@@ -29,6 +30,7 @@ tileToColor element = do
   setSGR [Reset]
   putStr (show element ++ " ")
 
+-- prints coloured row
 colorRow :: [Tile] -> IO ()
 colorRow [] = do
   putStr ""
@@ -36,6 +38,7 @@ colorRow (x : xs) = do
   tileToColor x
   colorRow xs
 
+-- prints coloured board
 printBoard :: Board -> IO ()
 printBoard [] = do
   setSGR [Reset]

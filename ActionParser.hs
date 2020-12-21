@@ -4,6 +4,7 @@ import DataTypes
 import Parser
 import Prelude hiding (Left, Right)
 
+-- Parses condition to return Conditional action
 conditionParser :: Parser Action
 conditionParser = do
   string "Cond{"
@@ -13,6 +14,7 @@ conditionParser = do
   string "}"
   return $ Cond (head colour) (parseAction direction)
 
+-- Parses String to return loop action
 loopParser :: Parser Action
 loopParser = do
   string "Loop{"
@@ -31,6 +33,7 @@ loopParser = do
             [(x, xs)] -> [(show x, xs)]
         )
 
+-- Returns corresponding action for a string
 parseAction :: String -> Action
 parseAction inpString
   | inpString == "Right" = Right

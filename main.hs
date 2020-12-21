@@ -12,6 +12,7 @@ import Kodable (applyPlayActions, createActionList, solve)
 import MapGenerator
 import ParsePathUtils (stringifyPath)
 
+-- Menu Function which controls the flow of control
 game :: Board -> IO ()
 game board = do
   if board == [] then putStrLn "Welcome to the Game!\n" else putStrLn ""
@@ -21,7 +22,7 @@ game board = do
   putStrLn "3. Play on current board -> play or play Right Up Down to specify function arguments."
   putStrLn "4. Find optimal solution for current board -> solve"
   putStrLn "5. Generate a new board -> generate"
-  putStrLn "5. Quit the game -> quit\n"
+  putStrLn "6. Quit the game -> quit\n"
   input <- getLine
   if take 4 input == "load"
     then
