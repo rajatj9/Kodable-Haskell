@@ -3,6 +3,7 @@ module MapGenerator where
 import AnsiUtils
 import BoardUtils
 import DataTypes
+import Kodable (solve)
 import System.Random
 
 -- type Position = (Int, Int)
@@ -54,13 +55,24 @@ genMap row col = do
   let board = [[tileSymbol (x, y) path bonuses conds (startX, 0) (endX, col - 1) | y <- [0 .. (col -1)]] | x <- [0 .. (row -1)]]
   return board
 
+genSolvableMaps row col = do
+  board <- genMap row col
+  printBoard board
+  let solution = solve board
+  if (null solution)
+    then do
+      putStrLn "Board not solvable! \n Generating new board..\n"
+      genSolvableMaps row col
+    else do
+      putStrLn "Solvable board Generated!"
+      return board
+
 genBoard = do
   putStrLn "Enter Number of Rows: "
   row <- getLine
   putStrLn "Enter Number of Columns: "
   col <- getLine
-  board <- genMap (read row :: Int) (read col :: Int)
-  printBoard board
+  board <- genSolvableMaps (read row :: Int) (read col :: Int)
   fileNum <- randomRIO (10, 100)
   let fileName = "map" ++ show (fileNum :: Int) ++ "-2.txt"
   writeFile fileName (boardString board)
