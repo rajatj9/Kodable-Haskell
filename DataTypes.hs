@@ -4,9 +4,19 @@ import Prelude hiding (Left, Right)
 
 data Tile = Grass | Ball | Condition Char | Star | Path | Target deriving (Eq)
 
-data Action = Up | Down | Right | Left | START | Cond Char Action | LOOP (Action, Action) Int | Function (Action, Action, Action) | Invalid deriving (Eq)
-
 type Board = [[Tile]]
+
+data Action
+  = Up
+  | Down
+  | Right
+  | Left
+  | START
+  | Cond Char Action
+  | LOOP (Action, Action) Int
+  | Function (Action, Action, Action)
+  | Invalid
+  deriving (Eq)
 
 type Position = (Int, Int)
 

@@ -22,8 +22,8 @@ genPath (x, y) target path row col last
     do
       index <- randomRIO (0, 3)
       let (newXDif, newYDif) = offsets !! index
-      prob <- randomRIO (0, 1)
-      let (xDif, yDif) = [(newXDif, newYDif), last] !! prob
+      prob <- randomRIO (0, 2)
+      let (xDif, yDif) = [(newXDif, newYDif), last, last] !! prob
       let newX = x + xDif
       let newY = y + yDif
       let finalPath = path ++ [(newX, newY)]
