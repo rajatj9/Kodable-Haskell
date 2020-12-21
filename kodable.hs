@@ -1,8 +1,10 @@
 module Kodable where
 
 import ActionParser
+import AnsiUtils
 import BoardUtils
 import CheckUtils
+import Control.Concurrent
 import Data.Char
 import Data.Foldable (minimumBy)
 import Data.Ord (comparing)
@@ -23,12 +25,6 @@ load fileName = do
   fileContent <- getFile fileName
   return (makeBoard fileContent)
 
-check :: Board -> IO Bool
-check board = dfs board stack visited
-  where
-    stack = [[findBall (enumerator board)]]
-    visited = []
-
 -- Solver
 
 blockNodes :: [Tile]
@@ -38,7 +34,9 @@ isBlockNode :: Board -> Position -> Bool
 isBlockNode board (x, y) = ((board !! x) !! y) `elem` blockNodes
 
 removeStar :: Board -> Position -> Board
-removeStar board (x, y) = [[if x1 == x && y == y1 && tile == Star then Path else tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
+removeStar board (x, y) = if (board !! x) !! y == Star then newBoard else board
+  where
+    newBoard = [[if x1 == x && y == y1 && tile == Star then Path else tile | (y1, tile) <- enumerate row] | (x1, row) <- enumerate board]
 
 notMove :: Board -> Position -> Position -> Int -> Bool
 notMove board (x, y) (xNew, yNew) numBonus = ((board !! x !! y) `elem` blockNodes) || ((board !! xNew) !! yNew == Grass) || ((board !! x) !! y == Target)
@@ -187,9 +185,13 @@ applyPlayActions (action : actions) state board numBonus = do
           then do
             putStrLn ("Sorry, error: cannot move to the " ++ show action)
             putStrLn "Your Current Board: "
-            putStrLn (boardString $ boardWithBall board state)
+            putStr "\ESC[2J"
+            threadDelay 1000000
+            printBoard $ boardWithBall board state
           else do
-            putStrLn (boardString $ boardWithBall newBoard (newX, newY))
+            putStr "\ESC[2J"
+            threadDelay 1000000
+            printBoard $ boardWithBall newBoard (newX, newY)
             if (board !! newX) !! newY == Target
               then putStrLn ("Congratulations! You win the game " ++ "with " ++ show (newBonus) ++ "remaining bonuses.")
               else (if newBonus < numBonus then putStrLn "Collected a bonus!" else putStrLn "")

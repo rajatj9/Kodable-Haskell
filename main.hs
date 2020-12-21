@@ -1,3 +1,4 @@
+import AnsiUtils
 import BoardUtils
   ( boardString,
     enumerator,
@@ -8,6 +9,7 @@ import BoardUtils
   )
 import DataTypes (Board)
 import Kodable (applyPlayActions, createActionList, solve)
+import MapGenerator
 import ParsePathUtils (stringifyPath)
 
 game :: Board -> IO ()
@@ -18,6 +20,7 @@ game board = do
   putStrLn "2. Check if loaded board is solvable -> check"
   putStrLn "3. Play on current board -> play or play Right Up Down to specify function arguments."
   putStrLn "4. Find optimal solution for current board -> solve"
+  putStrLn "5. Generate a new board -> generate"
   putStrLn "5. Quit the game -> quit\n"
   input <- getLine
   if take 4 input == "load"
@@ -28,7 +31,7 @@ game board = do
           if not (null fileContent)
             then do
               let board = makeBoard fileContent
-              putStrLn (boardString board)
+              printBoard board
               putStrLn "Board Loaded Successfully!\n"
               game board
             else game []
@@ -79,9 +82,13 @@ game board = do
                                 if (take 5 input) == "solve" then putStrLn ("Solution: " ++ stringifyPath solution) else putStrLn ("Solvable: " ++ show (not (null solution)))
                                 game board
                       else
-                        ( do
-                            putStrLn "Invalid Input!"
-                            game board
+                        ( if take 8 input == "generate"
+                            then do
+                              genBoard
+                              game board
+                            else do
+                              putStrLn "Invalid Input!"
+                              game board
                         )
                   )
             )
